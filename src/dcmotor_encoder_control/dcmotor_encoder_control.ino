@@ -15,6 +15,18 @@
  *       
  ******************************************************************************************/
 
+// include headers
+  /***
+    Iterate through each byte of the EEPROM storage.
+    Larger AVR processors have larger EEPROM sizes, E.g:
+    - Arduino Duemilanove: 512 B EEPROM storage.
+    - Arduino Uno:         1 kB EEPROM storage.
+    - Arduino Mega:        4 kB EEPROM storage.
+    Rather than hard-coding the length, you should use the pre-provided length function.
+    This will make your code portable to all AVR processors.
+  ***/
+#include <EEPROM.h>
+
 // define 
 #define Baudrate 115200
 
@@ -27,8 +39,8 @@
 // Motor Conrol pin 
 // #Digital pin #9,10 is for Timer Register (fix)
 #define MOTOR_PWM_PIN 9
-#define MOTOR_DIRECTION 11
-#define MOTOR_STSP 12
+#define MOTOR_DIRECTION 6
+#define MOTOR_STSP 7
 #define MOTOR_FREQUENCY 799
 
 // manual functions
@@ -42,21 +54,26 @@ void isrB();
 static long g_enc_pos = 0;
 static int motor_duty = 399; // 50%
 static int flag = 0;
-
+static long g_enc_pos_EEP = 0;
 
 void setup() {
   // put your setup code here, to run once:
   Initialize();
   EncoderInit();
   FastPWMRegisterSet();
+  
+  Serial.println(g_enc_pos);
+  delay(2000);
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
 
   if(flag == 0){
-    Serial.print("Encoder Counter : ");
-    Serial.println(g_enc_pos);  
+    //Serial.print("Encoder Counter : ");
+    //Serial.println(g_enc_pos);
+    EEPROMWritelong(0,g_enc_pos);
+    Serial.println(g_enc_pos);
   }
   
   if(g_enc_pos>=106400)
@@ -73,13 +90,14 @@ void Initialize()
 {
   
   Serial.begin(Baudrate);
-
+  
   pinMode(MOTOR_PWM_PIN, OUTPUT);
   pinMode(MOTOR_DIRECTION, OUTPUT);
   pinMode(MOTOR_STSP, OUTPUT);
-
   digitalWrite(MOTOR_DIRECTION, HIGH);
   digitalWrite(MOTOR_STSP, HIGH);
+
+  
   
 }
 
@@ -92,6 +110,13 @@ void EncoderInit()
   pinMode(ENCODER_PAHSE_B, INPUT);
   attachInterrupt(0, isrA, CHANGE);
   attachInterrupt(1, isrB, CHANGE);
+
+  g_enc_pos = EEPROMReadlong(0);  
+  // EEPROM clear 0
+  for(int i=0; i<EEPROM.length(); i++)
+  {
+    EEPROM.write(i,0);  
+  }
 }
 
 /**
@@ -142,6 +167,7 @@ void isrA()
     }
   }
 
+  
   if(g_enc_pos>=106400)
   {
     OCR1A =799;
@@ -174,10 +200,34 @@ void isrB()
       g_enc_pos -= 1;
     }
   }
+
+    
   if(g_enc_pos>=106400)
   {
     OCR1A =799;
     flag = 1;
   }
   
+}
+
+
+long EEPROMReadlong(long address) {
+  long four = EEPROM.read(address);
+  long three = EEPROM.read(address + 1);
+  long two = EEPROM.read(address + 2);
+  long one = EEPROM.read(address + 3);
+  
+  return ((four << 0) & 0xFF) + ((three << 8) & 0xFFFF) + ((two << 16) & 0xFFFFFF) + ((one << 24) & 0xFFFFFFFF);
+}
+
+void EEPROMWritelong(int address, long value) {
+  byte four = (value & 0xFF);
+  byte three = ((value >> 8) & 0xFF);
+  byte two = ((value >> 16) & 0xFF);
+  byte one = ((value >> 24) & 0xFF);
+  
+  EEPROM.write(address, four);
+  EEPROM.write(address + 1, three);
+  EEPROM.write(address + 2, two);
+  EEPROM.write(address + 3, one);
 }

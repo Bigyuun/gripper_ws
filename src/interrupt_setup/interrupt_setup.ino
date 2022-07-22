@@ -33,10 +33,10 @@ void loop() {
   // put your main code here, to run repeatedly:
 
   if(flag == 0){
-    Serial.print("Duty : "); Serial.println(OCR1A);
+    //Serial.print("Duty : "); Serial.println(OCR1A);
     Serial.print("Encoder Counter : ");
     Serial.println(g_enc_pos);  
-    delay(1000);
+    //delay(1000);
   }
   
   if(g_enc_pos>=106400)
