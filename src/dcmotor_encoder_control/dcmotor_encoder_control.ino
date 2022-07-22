@@ -1,24 +1,47 @@
+/******************************************************************************************
+ * Project : gripper_ws
+ * 
+ * @file dcmotor_encoder_control.ino
+ * @git  https://github.com/Bigyuun/gripper_ws
+ * @brief
+ * DC motor control CODE
+ * - PWM 20kHz
+ * - Encoder count (interrupt)
+ * 
+ * - using Timer Registers for make up to 20kHz of PWM frequency
+ * - counter will be increase(or decrease) 4(int) per 1 revolution
+ *   ex) Suppose that motor reducer is 100, encoder resolution is 7/rev
+ *       If motor shaft rotates 1 revolution, the encoder will count 2800 (100x7x4)
+ *       
+ ******************************************************************************************/
+
+// define 
 #define Baudrate 115200
 
 #define POTENTIOMETER A0
 
+// Arduino has the its own interrupt pin num#
 #define ENCODER_PHASE_A 2 // pin #2,3 are only things for using interrupt
 #define ENCODER_PAHSE_B 3
-#define MOTOR_PWM_PIN 9 // recommend pin #10 just use for PWM timer
+
+// Motor Conrol pin 
+// #Digital pin #9,10 is for Timer Register (fix)
+#define MOTOR_PWM_PIN 9
 #define MOTOR_DIRECTION 11
 #define MOTOR_STSP 12
 #define MOTOR_FREQUENCY 799
 
+// manual functions
 void FastPWMRegisterSet();
 void Initialize();
 void EncoderInit();
 void isrA();
 void isrB();
 
+// golbal variables
 static long g_enc_pos = 0;
 static int motor_duty = 399; // 50%
 static int flag = 0;
-
 
 
 void setup() {
@@ -26,17 +49,14 @@ void setup() {
   Initialize();
   EncoderInit();
   FastPWMRegisterSet();
-
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
 
   if(flag == 0){
-    Serial.print("Duty : "); Serial.println(OCR1A);
     Serial.print("Encoder Counter : ");
     Serial.println(g_enc_pos);  
-    delay(1000);
   }
   
   if(g_enc_pos>=106400)
@@ -46,6 +66,9 @@ void loop() {
   }
 }
 
+/**
+ * @ brief  motor setup
+ */
 void Initialize()
 {
   
@@ -60,6 +83,9 @@ void Initialize()
   
 }
 
+/**
+ * @ brief  interrupt pin setup
+ */
 void EncoderInit()
 {
   pinMode(ENCODER_PHASE_A, INPUT);
@@ -68,6 +94,16 @@ void EncoderInit()
   attachInterrupt(1, isrB, CHANGE);
 }
 
+/**
+ * @brief   Timer Register setting
+ * @ref     https://m.blog.naver.com/PostView.naver?isHttpsRedirect=true&blogId=ysahn2k&logNo=221330281715 
+ * 
+ * @comment COMnA0(1), COMnB0(1) are the register for High Low set
+ *          WGM11(12,13) are the register for PWM mode type
+ *          CS10 are the register for Prescaler
+ *          ICR1 is the register for setting frequency
+ *          OCR1A(B) are the register for setting duty
+ */
 void FastPWMRegisterSet()
 {
   TCCR1A = bit(COM1A1) | bit(COM1A0) | bit(COM1B1) | bit(COM1B0); //inverting mode => 0일때 HIGH, MAX일때 LOW
@@ -81,6 +117,9 @@ void FastPWMRegisterSet()
 }
 
 
+/**
+ * @ brief  interrupt function for Encoder phase A
+ */
 void isrA()
 {
   if (digitalRead(ENCODER_PHASE_A) == HIGH) { 
@@ -110,6 +149,9 @@ void isrA()
   }
 }
 
+/**
+ * @ brief  interrupt function for Encoder phase B
+ */
 void isrB()
 {
   // look for a low-to-high on channel B
