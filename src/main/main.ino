@@ -15,28 +15,30 @@
  *       
  * @note       
  ******************************************************************************************/
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// include headers
-  /***
-    Iterate through each byte of the EEPROM storage.
-    Larger AVR processors have larger EEPROM sizes, E.g:
-    - Arduino Duemilanove: 512 B EEPROM storage.
-    - Arduino Uno:         1 kB EEPROM storage.
-    - Arduino Mega:        4 kB EEPROM storage.
-    Rather than hard-coding the length, you should use the pre-provided length function.
-    This will make your code portable to all AVR processors.
-  ***/
+/***
+ * @name : EEPROM.h
+ * @brief :
+  Iterate through each byte of the EEPROM storage.
+  Larger AVR processors have larger EEPROM sizes, E.g:
+  - Arduino Duemilanove: 512 B EEPROM storage.
+  - Arduino Uno:         1 kB EEPROM storage.
+  - Arduino Mega:        4 kB EEPROM storage.
+  Rather than hard-coding the length, you should use the pre-provided length function.
+  This will make your code portable to all AVR processors.
+***/
 #include <EEPROM.h>
 #include <Arduino_FreeRTOS.h>
 
 #define Baudrate 115200
-
 /*****************************************************
  * Pin match
  *****************************************************/
 // Arduino has the its own interrupt pin num#
 #define ENCODER_PHASE_A 2    // pin #2,3 are only things for using interrupt
 #define ENCODER_PAHSE_B 3
+
 // Motor Conrol pin 
 #define MOTOR_PWM_PIN 9      // #Digital pin #9,10 is for Timer Register (fix)
 #define MOTOR_DIRECTION 11
@@ -72,29 +74,27 @@ void isrB();
 long EEPROMReadlong();
 void EEPROMWritelong();
 void EEPROMSave(void *pvParameters);
+void RTOSInit();
 
-
+/*****************************************************
+ * Global variables
+ *****************************************************/
 static long g_enc_pos = 0;
 const int motor_enable = 300; // 50%
 const int motor_disable = 0;  // 0$
 static int flag = 0;
 //static long target_pos = TARGET_RESOULTION* GEAR_RATIO * ENCODER_RESOLUTION * 4;
 
-/////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 void setup() {
   // put your setup code here, to run once:
   Initialize();
   EncoderInit();
   FastPWMRegisterSet();
-  g_enc_pos = 0;
-  g_enc_pos = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
-  Serial.print("EEPROM_pos : "); Serial.println(g_enc_pos);
-  Serial.print("target Pos : "); Serial.println(TARGET_POS);
-  Serial.println("RTOS Thread Creating...");
-  xTaskCreate(EEPROMSave, "Task1", 128, NULL, NULL, NULL);
-  //delay(500);
-  //vTaskStartScheduler();
-  Serial.println("RTOS Thread Created!");
+  RTOSInit();
+
+
 }
 
 void loop() {
@@ -118,8 +118,13 @@ void loop() {
   }
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////
+
+/************************************************************************************
+* Initializing Functions For Arduino setup()
+* - Start
+************************************************************************************/
 void Initialize()
 {
   
@@ -144,6 +149,12 @@ void EncoderInit()
   attachInterrupt(0, isrA, CHANGE);
   attachInterrupt(1, isrB, CHANGE);
   Serial.println(" DONE");
+  
+  g_enc_pos = 0;
+  g_enc_pos = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
+
+  Serial.print("EEPROM_pos : "); Serial.println(g_enc_pos);
+  Serial.print("target Pos : "); Serial.println(TARGET_POS);
   //delay(500);
 }
 
@@ -163,7 +174,27 @@ void FastPWMRegisterSet()
   //delay(500);
 }
 
+/*
+ * @brief ROTS Thread creator
+ */
+void RTOSInit()
+{
+  Serial.println("RTOS Thread Creating...");
+  xTaskCreate(EEPROMSave, "Task1", 128, NULL, NULL, NULL);
+  vTaskStartScheduler();
+  Serial.println("RTOS Thread Created!");
+}
+/************************************************************************************
+* Initializing Functions For Arduino setup()
+* - END
+************************************************************************************/
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/************************************************************************************
+* Interrupt Functions - Encoder count : (g_enc_pos)
+* - START
+************************************************************************************/
 void isrA()
 {
   if (digitalRead(ENCODER_PHASE_A) == HIGH) { 
@@ -210,7 +241,17 @@ void isrB()
     }
   }
 }
+/************************************************************************************
+* Interrupt Functions - Encoder count : (g_enc_pos)
+* - END
+************************************************************************************/
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/************************************************************************************
+* EEPROM write(save) & read functions
+* - START
+************************************************************************************/
 long EEPROMReadlong(long address) {
   long four = EEPROM.read(address);
   long three = EEPROM.read(address + 1);
@@ -231,7 +272,16 @@ void EEPROMWritelong(int address, long value) {
   EEPROM.write(address + 2, two);
   EEPROM.write(address + 3, one);
 }
+/************************************************************************************
+* EEPROM write(save) & read functions
+* - START
+************************************************************************************/
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * @brief EEPROMSave() is RTOS Thread function
+ */
 void EEPROMSave(void *pvParameters)
 {
   while(true)
