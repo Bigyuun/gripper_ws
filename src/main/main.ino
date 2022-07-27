@@ -28,7 +28,6 @@
   ***/
 #include <EEPROM.h>
 #include <Arduino_FreeRTOS.h>
-#include <Arduino_FreeRTOS.h>
 
 #define Baudrate 115200
 
@@ -54,7 +53,14 @@
  *****************************************************/
 #define ENCODER_POS_EEPROM_ADDRESS 0
 #define ENCODER_RESOLUTION 7
+
+/*****************************************************
+ * Setting info
+ *****************************************************/
 #define TARGET_RESOULTION 5
+//#define TARGET_POS (TARGET_RESOULTION*GEAR_RATIO*ENCODER_RESOLUTION*4)
+#define TARGET_POS 53200
+
 /*****************************************************
  * Manual functions
  *****************************************************/
@@ -72,7 +78,7 @@ static long g_enc_pos = 0;
 const int motor_enable = 300; // 50%
 const int motor_disable = 0;  // 0$
 static int flag = 0;
-static long target_pos = TARGET_RESOULTION* GEAR_RATIO * ENCODER_RESOLUTION * 4;
+//static long target_pos = TARGET_RESOULTION* GEAR_RATIO * ENCODER_RESOLUTION * 4;
 
 /////////////////////////////////////////////
 void setup() {
@@ -80,11 +86,10 @@ void setup() {
   Initialize();
   EncoderInit();
   FastPWMRegisterSet();
-
-  long EEPROM_pos = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
-  Serial.print("EEPROM_pos : "); Serial.println(EEPROM_pos);
-  //delay(1000);
-
+  g_enc_pos = 0;
+  g_enc_pos = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
+  Serial.print("EEPROM_pos : "); Serial.println(g_enc_pos);
+  Serial.print("target Pos : "); Serial.println(TARGET_POS);
   Serial.println("RTOS Thread Creating...");
   xTaskCreate(EEPROMSave, "Task1", 128, NULL, NULL, NULL);
   //delay(500);
@@ -96,16 +101,18 @@ void loop() {
   // put your main code here, to run repeatedly:
 
   Serial.print("Encoder Counter : "); Serial.println(g_enc_pos);
+  Serial.print("Motor Duty : "); Serial.println(OCR1A);
   //Serial.print("EEPROM Data : "); Serial.println(EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS));
   if(flag ==0)
   {
-     if(g_enc_pos>=10640 || g_enc_pos<=-10640)
+     if(g_enc_pos >= TARGET_POS || g_enc_pos <= -TARGET_POS)
      {
         OCR1A = motor_disable;
         flag = 1;
      }
      else
      {
+        digitalWrite(MOTOR_DIRECTION, HIGH);
         OCR1A = motor_enable;  
      }
   }
@@ -118,25 +125,31 @@ void Initialize()
   
   Serial.begin(Baudrate);
 
+  Serial.print("Initializing...");
   pinMode(MOTOR_PWM_PIN, OUTPUT);
   pinMode(MOTOR_DIRECTION, OUTPUT);
   pinMode(MOTOR_STSP, OUTPUT);
 
   digitalWrite(MOTOR_DIRECTION, HIGH);
   digitalWrite(MOTOR_STSP, HIGH);
-  
+  Serial.println(" DONE");
+  //delay(500);
 }
 
 void EncoderInit()
 {
+  Serial.print("Encoder interrupter Initializing...");
   pinMode(ENCODER_PHASE_A, INPUT);
   pinMode(ENCODER_PAHSE_B, INPUT);
   attachInterrupt(0, isrA, CHANGE);
   attachInterrupt(1, isrB, CHANGE);
+  Serial.println(" DONE");
+  //delay(500);
 }
 
 void FastPWMRegisterSet()
 {
+  Serial.print("TimerRegister Initializing...");
   //TCCR1A = bit(COM1A1) | bit(COM1A0) | bit(COM1B1) | bit(COM1B0); //inverting mode => 0일때 HIGH, MAX일때 LOW
   TCCR1A = bit(COM1A1)| bit(COM1B1); //non-inverting mode => 0일때 LOW, MAX일때 HIGH
   TCCR1A |= bit(WGM11);
@@ -146,6 +159,8 @@ void FastPWMRegisterSet()
   OCR1A = motor_disable; // 듀티 설정 => OCR1A/ICR1
   OCR1B = motor_disable;
   TCNT1 = 0;
+  Serial.println(" DONE");
+  //delay(500);
 }
 
 
@@ -224,6 +239,6 @@ void EEPROMSave(void *pvParameters)
     EEPROMWritelong(ENCODER_POS_EEPROM_ADDRESS, g_enc_pos);
     long k = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
     Serial.println(k);
-    //delay(10);
+    delay(100);
   }
 }
