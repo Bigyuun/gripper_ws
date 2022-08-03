@@ -16,7 +16,7 @@ void isrA();
 void isrB();
 
 static long g_enc_pos = 0;
-static int motor_duty = 200; // 50%
+static int motor_duty = 0; // 50%
 static int flag = 0;
 
 
@@ -34,35 +34,9 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-
-
   
   Serial.print("Encoder Counter : ");
   Serial.println(g_enc_pos);
-
-  if(g_enc_pos>= 20000 && flag ==0)
-  {
-    digitalWrite(MOTOR_STSP, LOW);
-    digitalWrite(MOTOR_DIRECTION, LOW);
-    digitalWrite(MOTOR_STSP, HIGH);
-    OCR1A = motor_duty;
-    flag = 1;
-  }
-//  else if(g_enc_pos>=18000 && flag ==0)
-//  {
-//    DecelerationProfile(g_enc_pos);
-//  }
-  
-  
-  
-  if(g_enc_pos<= 10000 && flag ==1)
-  {
-    digitalWrite(MOTOR_STSP, LOW);
-    digitalWrite(MOTOR_DIRECTION, HIGH);
-    digitalWrite(MOTOR_STSP, HIGH);
-    flag = 0;
-  }
-
 
 }
 
@@ -91,7 +65,7 @@ void EncoderInit()
 void FastPWMRegisterSet()
 {
   //TCCR1A = bit(COM1A1) | bit(COM1A0) | bit(COM1B1) | bit(COM1B0); //inverting mode => 0일때 HIGH, MAX일때 LOW
-  TCCR1A = bit(COM1A1)| big(COM1B1); //non-inverting mode => 0일때 LOW, MAX일때 HIGH
+  TCCR1A = bit(COM1A1)| bit(COM1B1); //non-inverting mode => 0일때 LOW, MAX일때 HIGH
   TCCR1A |= bit(WGM11);
   TCCR1B = bit(WGM12) | bit(WGM13); // Fast PWM mode using ICR1 as TOP
   TCCR1B |= bit(CS10); // no prescaler
@@ -147,14 +121,4 @@ void isrB()
       g_enc_pos -= 1;
     }
   }
-}
-
-
-void DecelerationProfile(long count)
-{
-  int pulse = 2000;
-  int remainer = 20000-count;
-  double rate = remainer/pulse;
-
-  OCR1A = motor_duty + ((600-motor_duty)*(1-rate));
 }
