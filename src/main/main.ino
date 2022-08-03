@@ -41,8 +41,8 @@
 
 // Motor Conrol pin 
 #define MOTOR_PWM_PIN 9      // #Digital pin #9,10 is for Timer Register (fix)
-#define MOTOR_DIRECTION 11
-#define MOTOR_STSP 12
+#define MOTOR_DIRECTION 4
+#define MOTOR_STSP 5
 
 /*****************************************************
  * Motor info
