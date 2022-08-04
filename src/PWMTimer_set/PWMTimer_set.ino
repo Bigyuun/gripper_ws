@@ -1,15 +1,11 @@
 #define Baudrate 115200
 
-#define POTENTIOMETER A0
-
-#define ENCODER_PHASE_A 7
-#define ENCODER_PAHSE_B 8
 #define MOTOR_PWM_PIN 9 // recommend pin #10 just use for PWM timer
-#define MOTOR_DIRECTION 11
-#define MOTOR_STSP 12
+#define MOTOR_DIRECTION 4
+#define MOTOR_STSP 5
 #define MOTOR_FREQUENCY 799
 
-static int motor_duty = 399; // 50%
+static int motor_duty = 300; // 50%
 static int enc_counter = 0;
 
 void FastPWMRegisterSet();
@@ -27,20 +23,19 @@ void loop() {
   //OCR1A = analogRead(POTENTIOMETER); // 0~1023
 
   Serial.print("Duty : "); Serial.println(OCR1A);
-  Serial.print("Encoder Counter : "); Serial.println(enc_counter);
   //delay(10);/}
+}
 
 void Initialize()
 {
   Serial.begin(Baudrate);
-  pinMode(ENCODER_PHASE_A, INPUT);
-  pinMode(ENCODER_PAHSE_B, INPUT);
+
   pinMode(MOTOR_PWM_PIN, OUTPUT);
   pinMode(MOTOR_DIRECTION, OUTPUT);
   pinMode(MOTOR_STSP, OUTPUT);
 
   digitalWrite(MOTOR_DIRECTION, HIGH);
-  digitalWrite(MOTOR_STSP, HIGH);
+  digitalWrite(MOTOR_STSP, LOW);
   
 }
 
@@ -51,7 +46,7 @@ void FastPWMRegisterSet()
   TCCR1B = bit(WGM12) | bit(WGM13); // Fast PWM mode using ICR1 as TOP
   TCCR1B |= bit(CS10); // no prescaler
   ICR1 = MOTOR_FREQUENCY; //주파수 설정 => 16MHz / ICR1 = 주파수
-  OCR1A = 399; // 듀티 설정 => OCR1A/ICR1
+  OCR1A = motor_duty; // 듀티 설정 => OCR1A/ICR1
   OCR1B = 0;
   TCNT1 = 0;
 }

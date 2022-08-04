@@ -41,7 +41,7 @@
  * @brief 
  * Header for modifying Timer Register
  */
-// #include <Arduino.h>
+#include <Arduino.h>
 // #include <io2333.h>
 // #include <io4434.h>
 // #include <iotnx61.h>
@@ -58,8 +58,8 @@
 
 // Motor Conrol pin 
 #define MOTOR_PWM_PIN 9      // #Digital pin #9,10 is for Timer Register (fix)
-#define MOTOR_CW 4
-#define MOTOR_CCW 5
+#define MOTOR_CCW 4
+#define MOTOR_CW 5
 // #define MOTOR_DIRECTION 4
 // #define MOTOR_STSP 5
 
@@ -100,9 +100,9 @@ void MotorOperation();
  * Global variables
  *********************************/
 static long g_enc_pos = 0;
-const int motor_enable = 200; // 50%
+const int motor_enable = 300; // 50%
 const int motor_disable = 0;  // 0$
-static int motor_op_flag = 0;
+static int motor_op_flag = true;
 //static long target_pos = TARGET_RESOULTION* GEAR_RATIO * ENCODER_RESOLUTION * 4;
 
 
@@ -145,7 +145,7 @@ void EncoderInit()
   Serial.println(" DONE");
   
   g_enc_pos = 0;
-  g_enc_pos = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
+  //g_enc_pos = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
 
   Serial.print("EEPROM_pos : "); Serial.println(g_enc_pos);
   Serial.print("target Pos : "); Serial.println(TARGET_POS);
@@ -298,7 +298,6 @@ void EEPROMSave(void *pvParameters)
   {
     EEPROMWritelong(ENCODER_POS_EEPROM_ADDRESS, g_enc_pos);
     long k = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
-    Serial.println(k);
     delay(100);
   }
 }
@@ -319,19 +318,24 @@ void MotorOperation(void *pvParameters)
     {
        if(g_enc_pos >= TARGET_POS || g_enc_pos <= -TARGET_POS)
        {
+          digitalWrite(MOTOR_CW, LOW);
+          digitalWrite(MOTOR_CCW, HIGH);
           OCR1A = motor_disable;
           motor_op_flag = 0;
           Serial.print("Current Enc POS"); Serial.println(g_enc_pos);
        }
        else
        {
-
           digitalWrite(MOTOR_CW, HIGH);
+          digitalWrite(MOTOR_CCW, LOW);
           OCR1A = motor_enable;  
           motor_op_flag = 1;
        }
     }
+    Serial.print(g_enc_pos); Serial.print(" / OCR1A : "); Serial.println(OCR1A);
+
   }
+
 }
 
 //==================================================================================================
