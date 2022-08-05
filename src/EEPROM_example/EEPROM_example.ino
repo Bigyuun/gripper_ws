@@ -23,12 +23,12 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  long rN = random(1363, 781539);
+  // long rN = random(1363, 781539);
 
-  EEPROMWritelong(0, rN);
-  long val = EEPROMReadlong(0);
+  // EEPROMWritelong(0, rN);
+  // long val = EEPROMReadlong(0);
 
-  Serial.println(val);
+  // Serial.println(val);
 }
 
 

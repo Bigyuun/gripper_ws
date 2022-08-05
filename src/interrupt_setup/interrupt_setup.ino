@@ -37,7 +37,8 @@ void loop() {
   
   Serial.print("Encoder Counter : ");
   Serial.println(g_enc_pos);
-
+  delay(100);
+  Serial.flush();
 }
 
 void Initialize()

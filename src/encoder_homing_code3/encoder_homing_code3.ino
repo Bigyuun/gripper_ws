@@ -102,7 +102,8 @@ while(LoadCell_3.getData() < 100)
   digitalWrite(7, HIGH);
   LoadCell_3.update();
   Serial.print(LoadCell_3.getData());
-  Serial.print("\t");
+  Serial.print("gg");
+  Serial.print("\n");
 }
 
   digitalWrite(7, LOW);
@@ -121,7 +122,8 @@ while(LoadCell_3.getData() < 150)
   digitalWrite(7, HIGH);
   LoadCell_3.update();
   Serial.print(LoadCell_3.getData());
-  Serial.print("\t");
+  Serial.print("gg");
+  Serial.print("\n");
 }
 
 
