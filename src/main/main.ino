@@ -41,7 +41,7 @@
  * @brief 
  * Header for modifying Timer Register
  */
-#include <Arduino.h>
+// #include <Arduino.h>
 // #include <io2333.h>
 // #include <io4434.h>
 // #include <iotnx61.h>
@@ -67,7 +67,7 @@
  * Motor info
  *********************************/
 #define MOTOR_FREQUENCY 799
-#define GEAR_RATIO 380
+#define GEAR_RATIO 290
 
 /*********************************
  * Encoder info
