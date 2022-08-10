@@ -1,19 +1,18 @@
-HardwareTimer pwmtimer2(2);
-
-
-
 void setup() {
-  // put your setup code here, to run once:
-  Serial.begin(115200);
-  pinMode(PB9, PWM);
-  pinMode(PA0, PWM);
-  pinMode(PA1, PWM);
-  pinMode(PA2, PWM);
-  pinMode(PA3, PWM);
-  pinMode(PA6, PWM);
-  pinMode(PA7, PWM);
+  // put your setup code here, to run once:  
+  HardwareTimer pwmtimer1(1);
+  HardwareTimer pwmtimer2(2);
 
+  pinMode(PA11, PWM);
+  pinMode(PA2, PWM);
   
+  pwmtimer1.pause();
+  pwmtimer1.setCount(0);
+  pwmtimer1.setPrescaleFactor(1); // 72/1 = 72
+  pwmtimer1.setOverflow(3600-1); // 72mHz/3600 = 20 (kHz)
+  pwmtimer1.refresh();
+  pwmtimer1.resume();
+
   pwmtimer2.pause();
   pwmtimer2.setCount(0);
   pwmtimer2.setPrescaleFactor(1); // 72/1 = 72
@@ -21,16 +20,16 @@ void setup() {
   pwmtimer2.refresh();
   pwmtimer2.resume();
 
-  pwmWrite(PA0, 50);
-  pwmWrite(PA1, 500);
-  pwmWrite(PA2, 3600);
-  pwmWrite(PA3, 1800);
-  pwmWrite(PA6, 3400);
-  pwmWrite(PA7, 1);
+  pwmWrite(PA11, 0);
+  pwmWrite(PA2, 0);
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
-  Serial.println("STM");
-  delay(500);
+  for(int i=0; i<3600; i++)
+  {
+    pwmWrite(PA11, i);
+    pwmWrite(PA2, i);
+    delay(1);
+  }
 }
