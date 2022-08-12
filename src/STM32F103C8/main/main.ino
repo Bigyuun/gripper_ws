@@ -44,16 +44,18 @@
  * @brief 
  */
 
-
 /*********************************
  * Process Setting
  *********************************/
-#define RTOS_FREQUENCY                 10     // ms (Default)
-#define RTOS_FREQUENCY_LOADCELLUPDATE  10
-#define RTOS_FREQUENCY_MOTOROPERATION  10
-#define RTOS_FREQUENCY_ENCODER_MONITOR 100
+#define RTOS_FREQUENCY                 10     // Hz (Default)
+#define RTOS_FREQUENCY_LOADCELLUPDATE  200
+#define RTOS_FREQUENCY_MOTOR_OPERATION 200
+#define RTOS_FREQUENCY_EEPROM_SAVE     10
+#define BAUDRATE                       115200
 
-#define BAUDRATE         115200
+#define NUMBER_OF_LOADCELL_MODULE      3
+#define NUMBER_OF_MOTOR_DRIVER         1
+
 
 ///////////////////////////////////////////////////////////////////////////////////////
 
@@ -83,12 +85,12 @@
 #define MOTOR_CW         PA4
 
 // Load Cell pin  
-#define HX711_DOUT_1     PB3   //mcu > HX711 no 1 dout pin
-#define HX711_SCK_1      PB4   //mcu > HX711 no 1 sck pin
-#define HX711_DOUT_2     PB5   //mcu > HX711 no 2 dout pin
-#define HX711_SCK_2      PB6   //mcu > HX711 no 2 sck pin
-#define HX711_DOUT_3     PB7   //mcu > HX711 no 3 dout pin
-#define HX711_SCK_3      PB8   //mcu > HX711 no 3 sck pin
+#define HX711_DOUT_1     PB4   //mcu > HX711 no 1 dout pin
+#define HX711_SCK_1      PB5   //mcu > HX711 no 1 sck pin
+#define HX711_DOUT_2     PB6   //mcu > HX711 no 2 dout pin
+#define HX711_SCK_2      PB7   //mcu > HX711 no 2 sck pin
+#define HX711_DOUT_3     PB8   //mcu > HX711 no 3 dout pin
+#define HX711_SCK_3      PB9   //mcu > HX711 no 3 sck pin
 
 // Debug & Test pin
 #define BOARD_LED_PIN    PC13
@@ -97,8 +99,7 @@
 /*********************************
  * Motor info
  *********************************/
-#define MOTOR_FREQUENCY  799
-#define GEAR_RATIO       289
+#define GEAR_RATIO       298
 
 /*********************************
  * Encoder info
@@ -117,24 +118,24 @@
  * Setting info
  *********************************/
 #define TARGET_RESOULTION   5
-#define TARGET_POS          53200
+#define TARGET_POS          (GEAR_RATIO * ENCODER_RESOLUTION * 4 * TARGET_RESOULTION)
 
 
 /*********************************
  * Manual functions
  *********************************/
-void EncoderInit();
-void MotorInit();
-void LoadCellInit();
-void RTOSInit();
+uint8_t EncoderInit();
+uint8_t MotorInit();
+uint8_t LoadCellInit();
+uint8_t RTOSInit();
 
 void isr_encoder_phase_A();
 void isr_encoder_phase_B();
-// long EEPROMReadlong();
-// void EEPROMWritelong();
+long EEPROMReadlong();
+void EEPROMWritelong();
 
-// void EEPROMSave();
-
+// RTOS Thread Functions
+void EEPROMSave();
 void MotorOperation();
 void LoadCellUpdate();
 void EncoderMonitor();
@@ -151,6 +152,8 @@ static char motor_op_flag = true;
 HX711_ADC LoadCell_1(HX711_DOUT_1, HX711_SCK_1); //HX711 1
 HX711_ADC LoadCell_2(HX711_DOUT_2, HX711_SCK_2); //HX711 2
 HX711_ADC LoadCell_3(HX711_DOUT_3, HX711_SCK_3); //HX711 3
+
+static float g_loadcell_1, g_loadcell_2, g_loadcell_3;
 
 unsigned long t = 0;
 
@@ -178,7 +181,7 @@ volatile float fz;
 /*********************************
 * Encoder Interrupt & init pos
 **********************************/
-void EncoderInit()
+uint8_t EncoderInit()
 {
   Serial.println("Encoder interrupter Initializing...");
   pinMode(ENCODER_PHASE_A, INPUT);
@@ -191,12 +194,14 @@ void EncoderInit()
   Serial.print("DONE");
   Serial.print(" / EEPROM_pos : "); Serial.print(g_enc_pos);
   Serial.print(" / target Pos : "); Serial.println(TARGET_POS);
+
+  return 1;
 }
 
 /*********************************
 * PWM setting (Timer Register)
 **********************************/
-void MotorInit()
+uint8_t MotorInit()
 {
   Serial.print("Motor Pin & PWM Initializing...");
 
@@ -210,20 +215,22 @@ void MotorInit()
 
   pinMode(MOTOR_PWM_PIN, PWM);
 
-  HardwareTimer pwmtimer1(1);  
-  pwmtimer1.pause();
-  pwmtimer1.setCount(0);
-  pwmtimer1.setPrescaleFactor(1);  // 72/1 = 72
-  pwmtimer1.setOverflow(3600 - 1); // 72mHz/3600 = 20 (kHz)
-  pwmtimer1.refresh();
-  pwmtimer1.resume();
+  HardwareTimer pwmtimer2(2);  
+  pwmtimer2.pause();
+  pwmtimer2.setCount(0);
+  pwmtimer2.setPrescaleFactor(1);  // 72/1 = 72
+  pwmtimer2.setOverflow(3600 - 1); // 72mHz/3600 = 20 (kHz)
+  pwmtimer2.refresh();
+  pwmtimer2.resume();
 
   pwmWrite(MOTOR_PWM_PIN, DUTY_MIN);
 
   Serial.println("DONE");
+
+  return 1;
 }
 
-void LoadCellInit()
+uint8_t LoadCellInit()
 {
   Serial.print("Load Cell Inititializing...");
 
@@ -269,61 +276,56 @@ void LoadCellInit()
   LoadCell_2.setCalFactor(CALIBRATION_VALUE); // user set calibration value (float)
   LoadCell_3.setCalFactor(CALIBRATION_VALUE); // user set calibration value (float)
   Serial.println("Done");
+
+  return 1;
 }
 
 /*********************************
 * RTOS Thread Initializing
 **********************************/
-void RTOSInit()
+uint8_t RTOSInit()
 {
   Serial.println("RTOS Thread Creating...");
 
-  // xTaskCreate(MotorOperation,"Task1",
-  //             200,NULL,tskIDLE_PRIORITY + 2,NULL);
-  // xTaskCreate(task2,"Task2",
-  //             200,NULL,tskIDLE_PRIORITY + 2,NULL);
-  // xTaskCreate(task3,"Task3",
-  //             200,NULL,tskIDLE_PRIORITY + 2,NULL);
-  // xTaskCreate(task4,"Task4",
-  //             200,NULL,tskIDLE_PRIORITY + 2,NULL);
-  xTaskCreate(task3,"Task5",
-              200,NULL,tskIDLE_PRIORITY, NULL);
-  xTaskCreate(MotorOperation, "Task1", 256, NULL, 1, NULL);
-  xTaskCreate(LoadCellUpdate, "Task2", 600, NULL, 2, NULL);
-  xTaskCreate(EncoderMonitor, "Task3", 128, NULL, 0, NULL);
+  xTaskCreate(MotorOperation,
+              "Task1",
+              256,
+              NULL,
+              tskIDLE_PRIORITY+2,
+              NULL);
 
-  //  BaseType_t xReturn;
+  xTaskCreate(LoadCellUpdate,
+              "Task2",
+              768,
+              NULL,
+              tskIDLE_PRIORITY+2,
+              NULL);
 
-  // xReturn = xTaskCreate(MotorOperation, "Task1", 128, NULL, 0, NULL);
-  // if(xReturn != pdPass) Serial.println("'Motor Operation' RTOS Thread creating fail..!")
+  xTaskCreate(EEPROMSave,
+              "Task4",
+              128,
+              NULL,
+              tskIDLE_PRIORITY+1,
+              NULL);
 
-  // xReturn = xTaskCreate(LoadCellUpdate, "Task2", 256, NULL, 0, NULL);
-  // if(xReturn != pdPass) Serial.println("'Load Cell Update' RTOS Thread creating fail..!")
+  xTaskCreate(MonitorAllParameters,
+              "Task5",
+              128,
+              NULL,
+              tskIDLE_PRIORITY+1,
+              NULL);
 
-  // xReturn = xTaskCreate(EncoderMonitor, "Task2", 64, NULL, 0, NULL);
-  // if(xReturn != pdPass) Serial.println("'Encoder Monitor' RTOS Thread creating fail..!")
-  
-  //xReturn = xTaskCreate(LoadCellUpdate, "Task2", 40, NULL, 0, NULL);
-  
-
-//  pinMode(BOARD_LED_PIN, OUTPUT);
-//  pinMode(LED_PIN, OUTPUT);
-//  pinMode(PB9, OUTPUT);
-//  pinMode(PC14, OUTPUT);
-//
-//  xTaskCreate(task1,"Task1",
-//              200,NULL,tskIDLE_PRIORITY + 2,NULL);
-//  xTaskCreate(task2,"Task2",
-//              200,NULL,tskIDLE_PRIORITY + 2,NULL);
-//  xTaskCreate(task3,"Task3",
-//              200,NULL,tskIDLE_PRIORITY + 2,NULL);
-//  xTaskCreate(task4,"Task4",
-//              200,NULL,tskIDLE_PRIORITY + 2,NULL);
-//  xTaskCreate(task5,"Task5",
-//              200,NULL,tskIDLE_PRIORITY + 2,NULL);
+  xTaskCreate(task1,
+              "Debug",
+              128,
+              NULL,
+              tskIDLE_PRIORITY,
+              NULL);
 
   vTaskStartScheduler();
   Serial.println("RTOS Thread Created!");
+  
+  return 1;
 }
 
 //==================================================================================================
@@ -398,26 +400,26 @@ void isr_encoder_phase_B()
 *         - START             */
 //==================================================================================================
 
-// long EEPROMReadlong(long address) {
-//   long four = EEPROM.read(address);
-//   long three = EEPROM.read(address + 1);
-//   long two = EEPROM.read(address + 2);
-//   long one = EEPROM.read(address + 3);
+long EEPROMReadlong(int address) {
+  long four = EEPROM.read(address);
+  long three = EEPROM.read(address + 1);
+  long two = EEPROM.read(address + 2);
+  long one = EEPROM.read(address + 3);
   
-//   return ((four << 0) & 0xFF) + ((three << 8) & 0xFFFF) + ((two << 16) & 0xFFFFFF) + ((one << 24) & 0xFFFFFFFF);
-// }
+  return ((four << 0) & 0xFF) + ((three << 8) & 0xFFFF) + ((two << 16) & 0xFFFFFF) + ((one << 24) & 0xFFFFFFFF);
+}
 
-// void EEPROMWritelong(int address, long value) {
-//   byte four = (value & 0xFF);
-//   byte three = ((value >> 8) & 0xFF);
-//   byte two = ((value >> 16) & 0xFF);
-//   byte one = ((value >> 24) & 0xFF);
+void EEPROMWritelong(int address, long value) {
+  byte four = (value & 0xFF);
+  byte three = ((value >> 8) & 0xFF);
+  byte two = ((value >> 16) & 0xFF);
+  byte one = ((value >> 24) & 0xFF);
   
-//   EEPROM.write(address, four);
-//   EEPROM.write(address + 1, three);
-//   EEPROM.write(address + 2, two);
-//   EEPROM.write(address + 3, one);
-// }
+  EEPROM.write(address, four);
+  EEPROM.write(address + 1, three);
+  EEPROM.write(address + 2, two);
+  EEPROM.write(address + 3, one);
+}
 //==================================================================================================
 /**
 * @note EEPROM write(save) & read functions
@@ -434,36 +436,15 @@ void isr_encoder_phase_B()
 /**
  * @brief EEPROMSave() is RTOS Thread function of Duration about "g_enc_pos"
  */
-// void EEPROMSave(void *pvParameters)
-// {
-//   while(true)
-//   {
-//     EEPROMWritelong(ENCODER_POS_EEPROM_ADDRESS, g_enc_pos);
-//     long k = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
-//     Serial.println("EEPROM Saved!");
-
-//     vTaskDelay( 100 / portTICK_PERIOD_MS ); ;
-//   }
-// }
-
-/**
- * @brief Encoder count Monitoring
- * 
- * @param pvParameters 
- */
-void EncoderMonitor(void *pvParameters)
+void EEPROMSave(void *pvParameters)
 {
   while(true)
   {
-    Serial.println("============Encoder Monitor=================");
-    Serial.print("Encoder POS : ");
-    Serial.println(g_enc_pos);
-    Serial.println("============================================");
-
-    vTaskDelay( RTOS_FREQUENCY_ENCODER_MONITOR / portTICK_PERIOD_MS ); ;
+    EEPROMWritelong(ENCODER_POS_EEPROM_ADDRESS, g_enc_pos);
+    long k = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
+    vTaskDelay( (1000/RTOS_FREQUENCY_EEPROM_SAVE) / portTICK_PERIOD_MS ); ;
   }
 }
-
 
 /**
  * @brief Motor Operation Thread function
@@ -472,40 +453,90 @@ void EncoderMonitor(void *pvParameters)
  */
 void MotorOperation(void *pvParameters)
 {
+  static unsigned long curt_time = millis();
+  static unsigned long end_time = 0;
+  static unsigned long prev_time = 0;
+  static unsigned long temp_time = 0;
+
   while(true)
   {
-    Serial.print("Encoder Counter : "); Serial.println(g_enc_pos);
+    curt_time = millis();
+    temp_time = curt_time - prev_time;
+    // Serial.print("Execute Time : "); Serial.println(temp_time);
+    prev_time = curt_time;
     if(motor_op_flag == 1)
     {
        if(g_enc_pos >= TARGET_POS || g_enc_pos <= -TARGET_POS)
        {
           digitalWrite(MOTOR_CW, LOW);
           digitalWrite(MOTOR_CCW, HIGH);
+          pwmWrite(MOTOR_PWM_PIN, DUTY_MIN);
           motor_op_flag = 0;
+          Serial.print("Encoder Counter : "); Serial.println(g_enc_pos);
        }
        else
        {
           digitalWrite(MOTOR_CW, HIGH);
           digitalWrite(MOTOR_CCW, LOW);
+          pwmWrite(MOTOR_PWM_PIN, DUTY_MAX/5);
           motor_op_flag = 1;
        }
     }
-     vTaskDelay( RTOS_FREQUENCY_MOTOROPERATION / portTICK_PERIOD_MS );
+
+    end_time = millis();
+
+    vTaskDelay( (1000/RTOS_FREQUENCY_MOTOR_OPERATION) / (portTICK_PERIOD_MS)  );
+
   }
 }
 
 void LoadCellUpdate(void *pvParameters)
 {
+
+  static unsigned long curt_time = micros();
+  static unsigned long end_time = 0;
+  static unsigned long prev_time = 0;
+  static unsigned long temp_time = 0;
+
   while(true)
   {
+    curt_time = micros();
+    temp_time = curt_time - prev_time;
+    // Serial.print("Execute Time : "); Serial.println(temp_time);
+    prev_time = curt_time;
+
     LoadCell_1.update();
     LoadCell_2.update();
     LoadCell_3.update();
-    Serial.print("LoadCell_1 : "); Serial.print(LoadCell_1.getData());
-    Serial.print(" / LoadCell_2 : "); Serial.print(LoadCell_2.getData());
-    Serial.print(" / LoadCell_3 : "); Serial.print(LoadCell_3.getData());
+    g_loadcell_1 = LoadCell_1.getData();
+    g_loadcell_2 = LoadCell_2.getData();
+    g_loadcell_3 = LoadCell_3.getData();
+
+
+    end_time = micros();
+    // Serial.print("Sequence Time : "); Serial.println(end_time-curt_time);
+
+    vTaskDelay( (1000/RTOS_FREQUENCY_LOADCELLUPDATE) / portTICK_PERIOD_MS );
+
+  }
+}
+
+void MonitorAllParameters(void *pvParameters)
+{
+  while(true)
+  {
+    Serial.println("==================================================");
+    Serial.println("LOADCELL_1    LOADCELL_2    LOADCELL_3    ENC_POS");
+    Serial.print(g_loadcell_1, 4);
+    Serial.print("        ");
+    Serial.print(g_loadcell_2, 4);
+    Serial.print("        ");
+    Serial.print(g_loadcell_3, 4);
+    Serial.print("              ");
+    Serial.print(g_enc_pos);
     Serial.print("\n");
-    vTaskDelay( RTOS_FREQUENCY_LOADCELLUPDATE / portTICK_PERIOD_MS );
+    // Serial.println("==================================================");
+    vTaskDelay( 100 / portTICK_PERIOD_MS );
   }
 }
 
@@ -526,7 +557,9 @@ void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
   Serial.print("Initializing...");
-  pinMode(LED_PIN, OUTPUT);
+  //pinMode(LED_PIN, OUTPUT);
+  pinMode(BOARD_LED_PIN, OUTPUT);
+
   EncoderInit();
   MotorInit();
   LoadCellInit();
@@ -565,9 +598,9 @@ void loop() {
  
 static void task1(void *pvParameters) {
   for (;;) {
-      vTaskDelay(1000);
+      vTaskDelay(500);
       digitalWrite(BOARD_LED_PIN, HIGH);
-      vTaskDelay(1000);
+      vTaskDelay(500);
       digitalWrite(BOARD_LED_PIN, LOW);
   }
 }

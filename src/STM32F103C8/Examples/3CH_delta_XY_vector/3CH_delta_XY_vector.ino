@@ -5,12 +5,12 @@ HX711 scale2;
 HX711 scale3;
 
 // HX711 circuit wiring
-uint8_t dataPin_1 = PA2;
-uint8_t clockPin_1 = PA3;
-uint8_t dataPin_2 = PA5;
-uint8_t clockPin_2 = PA6;
-uint8_t dataPin_3 = PA11;
-uint8_t clockPin_3 = PA12;
+uint8_t dataPin_1 = PA6;
+uint8_t clockPin_1 = PA7;
+uint8_t dataPin_2 = PB5;
+uint8_t clockPin_2 = PB6;
+uint8_t dataPin_3 = PB7;
+uint8_t clockPin_3 = PB8;
 
 uint32_t start, stop;
 volatile float f_1;
@@ -112,18 +112,18 @@ void loop()
   
   f_ztotal = (f1[2] + f2[2] + f3[2]) / rubber_k / 3;
 
-//  Serial.print(f_1);
-//  Serial.print(",");
-//  Serial.print(f_2);
-//  Serial.print(",");
-//  Serial.print(f_3);
+  Serial.print(f_1);
+  Serial.print(",");
+  Serial.print(f_2);
+  Serial.print(",");
+  Serial.println(f_3);
 //  Serial.print(",");
 
-  Serial.print(fx);
-  Serial.print(",");
-  Serial.print(fy);
-  Serial.print(",");
-  Serial.println(fz);
+//  Serial.print(fx);
+//  Serial.print(",");
+//  Serial.print(fy);
+//  Serial.print(",");
+//  Serial.println(fz);
 
   delayMicroseconds(500);
 }
