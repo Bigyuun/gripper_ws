@@ -1,4 +1,5 @@
 
+
 /******************************************************************************************
  * Project : gripper_ws :: main
  * 
@@ -47,17 +48,31 @@
 /*********************************
  * Process Setting
  *********************************/
-#define RTOS_FREQUENCY                 10     // Hz (Default)
-#define RTOS_FREQUENCY_LOADCELLUPDATE  200
-#define RTOS_FREQUENCY_MOTOR_OPERATION 200
-#define RTOS_FREQUENCY_EEPROM_SAVE     10
-#define BAUDRATE                       115200
-
+// Hardware setting
 #define NUMBER_OF_LOADCELL_MODULE      3
 #define NUMBER_OF_MOTOR_DRIVER         1
+#define NUMBER_OF_RTOS_THREADS         4
 
+// Utility On & OFF setting
+#define ACTIVE_LOADCELL                1       // 1-ON, 0-OFF
+#define ACTIVE_ENCODER                 1       // 1-ON, 0-OFF
+#define ACTIVE_MOTOR                   1       // 1-ON, 0-OFF
+#define ACTIVE_DATA_MONITORING         1       // 1-ON, 0-OFF
+
+// ROTS Threads Frequency Setting
+#define RTOS_FREQUENCY                 100     // Hz (Default)
+#define RTOS_FREQUENCY_LOADCELLUPDATE  500     // Hz (Default)
+#define RTOS_FREQUENCY_MOTOR_OPERATION 500     // Hz (Default)
+#define RTOS_FREQUENCY_EEPROM_SAVE     100     // Hz (Default)
+#define RTOS_FREQUENCY_MONITORING      20      // Hz (Default)
 
 ///////////////////////////////////////////////////////////////////////////////////////
+
+/*********************************
+ * Serial communication Parameters
+ *********************************/
+#define BAUDRATE                       115200
+#define BANDWIDTH                      10
 
 /*********************************
  * MCU
@@ -135,10 +150,12 @@ long EEPROMReadlong();
 void EEPROMWritelong();
 
 // RTOS Thread Functions
-void EEPROMSave();
+void EEPROMSaveNode();
 void MotorOperation();
-void LoadCellUpdate();
-void EncoderMonitor();
+void LoadCellUpdateNode();
+void MonitorAllParametersNode();
+void SerialCommunicationNode();
+static void LEDIndicator();
 
 ///////////////////////////////////////////////////////////////////////////////////////
 
@@ -148,12 +165,14 @@ void EncoderMonitor();
 static volatile long g_enc_pos = 0;
 static char motor_op_flag = true;
 
+#if ACTIVE_LOADCELL == 1
 //HX711 constructor (dout pin, sck pin)
 HX711_ADC LoadCell_1(HX711_DOUT_1, HX711_SCK_1); //HX711 1
 HX711_ADC LoadCell_2(HX711_DOUT_2, HX711_SCK_2); //HX711 2
 HX711_ADC LoadCell_3(HX711_DOUT_3, HX711_SCK_3); //HX711 3
+#endif
 
-static float g_loadcell_1, g_loadcell_2, g_loadcell_3;
+static float g_loadcell[NUMBER_OF_LOADCELL_MODULE] = {0};
 
 unsigned long t = 0;
 
@@ -165,7 +184,8 @@ volatile float fx;
 volatile float fy;
 volatile float fz;
 
-
+// monitoring val
+static float loop_time_checker[NUMBER_OF_RTOS_THREADS] = {0};
 
 ///////////////////////////////////////////////////////////////////////////////////////
 
@@ -183,7 +203,7 @@ volatile float fz;
 **********************************/
 uint8_t EncoderInit()
 {
-  Serial.println("Encoder interrupter Initializing...");
+  Serial.print("Encoder interrupter Initializing...");
   pinMode(ENCODER_PHASE_A, INPUT);
   pinMode(ENCODER_PAHSE_B, INPUT);
   attachInterrupt(digitalPinToInterrupt(ENCODER_PHASE_A), isr_encoder_phase_A, CHANGE);
@@ -191,10 +211,10 @@ uint8_t EncoderInit()
 
   g_enc_pos = 0;
   //g_enc_pos = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
+  delay(500);
   Serial.print("DONE");
   Serial.print(" / EEPROM_pos : "); Serial.print(g_enc_pos);
   Serial.print(" / target Pos : "); Serial.println(TARGET_POS);
-
   return 1;
 }
 
@@ -225,13 +245,14 @@ uint8_t MotorInit()
 
   pwmWrite(MOTOR_PWM_PIN, DUTY_MIN);
 
+  delay(500);
   Serial.println("DONE");
-
   return 1;
 }
 
 uint8_t LoadCellInit()
 {
+  #if ACTIVE_LOADCELL == 1
   Serial.print("Load Cell Inititializing...");
 
   LoadCell_1.begin();
@@ -275,9 +296,12 @@ uint8_t LoadCellInit()
   LoadCell_1.setCalFactor(CALIBRATION_VALUE); // user set calibration value (float)
   LoadCell_2.setCalFactor(CALIBRATION_VALUE); // user set calibration value (float)
   LoadCell_3.setCalFactor(CALIBRATION_VALUE); // user set calibration value (float)
-  Serial.println("Done");
 
+  delay(500);
+  Serial.println("Done");
   return 1;
+  
+  #endif
 }
 
 /*********************************
@@ -285,47 +309,58 @@ uint8_t LoadCellInit()
 **********************************/
 uint8_t RTOSInit()
 {
-  Serial.println("RTOS Thread Creating...");
+  Serial.print("RTOS Thread Creating...");
 
+  if(ACTIVE_MOTOR)
+  {
   xTaskCreate(MotorOperation,
-              "Task1",
+              "MotorOperation",
               256,
               NULL,
               tskIDLE_PRIORITY+2,
               NULL);
+  }
 
-  xTaskCreate(LoadCellUpdate,
-              "Task2",
+  if(ACTIVE_LOADCELL)
+  {
+  xTaskCreate(LoadCellUpdateNode,
+              "LoadCellUpdate",
               768,
               NULL,
               tskIDLE_PRIORITY+2,
               NULL);
+  }
 
-  xTaskCreate(EEPROMSave,
-              "Task4",
+  xTaskCreate(EEPROMSaveNode,
+              "EEPROMSave",
               128,
               NULL,
               tskIDLE_PRIORITY+1,
               NULL);
 
-  xTaskCreate(MonitorAllParameters,
-              "Task5",
+  if(ACTIVE_DATA_MONITORING)
+  {
+  xTaskCreate(MonitorAllParametersNode,
+              "MonitorAllParameters",
               128,
               NULL,
               tskIDLE_PRIORITY+1,
               NULL);
+  }
 
-  xTaskCreate(task1,
-              "Debug",
-              128,
+  xTaskCreate(LEDIndicator,
+              "LEDIndicator_Debug",
+              64,
               NULL,
               tskIDLE_PRIORITY,
               NULL);
+  Serial.println("Done");
 
+  // if vTaskStartScheduler doen't work, under line will be operated.
   vTaskStartScheduler();
-  Serial.println("RTOS Thread Created!");
+  Serial.println("vTaskStartScheduler() failed!!!");
   
-  return 1;
+  return 0;
 }
 
 //==================================================================================================
@@ -433,18 +468,59 @@ void EEPROMWritelong(int address, long value) {
 *         - START             */
 //==================================================================================================
 
-/**
- * @brief EEPROMSave() is RTOS Thread function of Duration about "g_enc_pos"
- */
-void EEPROMSave(void *pvParameters)
+/*********************************
+* Load Cell data Update
+**********************************/
+void LoadCellUpdateNode(void *pvParameters)
 {
+  #if ACTIVE_LOADCELL == 1
+  static unsigned long curt_time = 0;
+  static unsigned long prev_time = 0;
+  static unsigned long temp_time = 0;
+
   while(true)
   {
+    curt_time = millis();
+    temp_time = curt_time - prev_time;
+    prev_time = curt_time;
+
+    LoadCell_1.update();
+    LoadCell_2.update();
+    LoadCell_3.update();
+    g_loadcell[0] = LoadCell_1.getData();
+    g_loadcell[1] = LoadCell_2.getData();
+    g_loadcell[2] = LoadCell_3.getData();
+
+    loop_time_checker[0] = temp_time;
+    vTaskDelay( (1000/RTOS_FREQUENCY_LOADCELLUPDATE) / portTICK_PERIOD_MS );
+  }
+  #endif
+}
+
+
+/*********************************
+* EEPROM Update (g_enc_pos update)
+**********************************/
+void EEPROMSaveNode(void *pvParameters)
+{
+  static unsigned long curt_time = 0;
+  static unsigned long prev_time = 0;
+  static unsigned long temp_time = 0;
+
+  while(true)
+  {
+    curt_time = millis();
+    temp_time = curt_time - prev_time;
+    prev_time = curt_time;
+
     EEPROMWritelong(ENCODER_POS_EEPROM_ADDRESS, g_enc_pos);
     long k = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
+
+    loop_time_checker[1] = temp_time;
     vTaskDelay( (1000/RTOS_FREQUENCY_EEPROM_SAVE) / portTICK_PERIOD_MS ); ;
   }
 }
+
 
 /**
  * @brief Motor Operation Thread function
@@ -453,8 +529,7 @@ void EEPROMSave(void *pvParameters)
  */
 void MotorOperation(void *pvParameters)
 {
-  static unsigned long curt_time = millis();
-  static unsigned long end_time = 0;
+  static unsigned long curt_time = 0;
   static unsigned long prev_time = 0;
   static unsigned long temp_time = 0;
 
@@ -462,81 +537,84 @@ void MotorOperation(void *pvParameters)
   {
     curt_time = millis();
     temp_time = curt_time - prev_time;
-    // Serial.print("Execute Time : "); Serial.println(temp_time);
     prev_time = curt_time;
+
     if(motor_op_flag == 1)
     {
        if(g_enc_pos >= TARGET_POS || g_enc_pos <= -TARGET_POS)
        {
-          digitalWrite(MOTOR_CW, LOW);
-          digitalWrite(MOTOR_CCW, HIGH);
+          // digitalWrite(MOTOR_CW, LOW);
+          // digitalWrite(MOTOR_CCW, HIGH);
+
+          digitalWrite(MOTOR_CW, HIGH);
+          digitalWrite(MOTOR_CCW, LOW);
+
           pwmWrite(MOTOR_PWM_PIN, DUTY_MIN);
           motor_op_flag = 0;
           Serial.print("Encoder Counter : "); Serial.println(g_enc_pos);
        }
        else
        {
-          digitalWrite(MOTOR_CW, HIGH);
-          digitalWrite(MOTOR_CCW, LOW);
+          // digitalWrite(MOTOR_CW, HIGH);
+          // digitalWrite(MOTOR_CCW, LOW);
+
+          digitalWrite(MOTOR_CW, LOW);
+          digitalWrite(MOTOR_CCW, HIGH);
           pwmWrite(MOTOR_PWM_PIN, DUTY_MAX/5);
           motor_op_flag = 1;
        }
     }
 
-    end_time = millis();
-
+    loop_time_checker[2] = temp_time;
     vTaskDelay( (1000/RTOS_FREQUENCY_MOTOR_OPERATION) / (portTICK_PERIOD_MS)  );
-
   }
 }
 
-void LoadCellUpdate(void *pvParameters)
-{
-
-  static unsigned long curt_time = micros();
-  static unsigned long end_time = 0;
-  static unsigned long prev_time = 0;
-  static unsigned long temp_time = 0;
-
-  while(true)
-  {
-    curt_time = micros();
-    temp_time = curt_time - prev_time;
-    // Serial.print("Execute Time : "); Serial.println(temp_time);
-    prev_time = curt_time;
-
-    LoadCell_1.update();
-    LoadCell_2.update();
-    LoadCell_3.update();
-    g_loadcell_1 = LoadCell_1.getData();
-    g_loadcell_2 = LoadCell_2.getData();
-    g_loadcell_3 = LoadCell_3.getData();
-
-
-    end_time = micros();
-    // Serial.print("Sequence Time : "); Serial.println(end_time-curt_time);
-
-    vTaskDelay( (1000/RTOS_FREQUENCY_LOADCELLUPDATE) / portTICK_PERIOD_MS );
-
-  }
-}
-
-void MonitorAllParameters(void *pvParameters)
+/*********************************
+* Monitoring Data & loop time of each Threads
+**********************************/
+void MonitorAllParametersNode(void *pvParameters)
 {
   while(true)
   {
-    Serial.println("==================================================");
+    Serial.println("=====================================================");
+    Serial.println("-------------------- <Data> -------------------------");
     Serial.println("LOADCELL_1    LOADCELL_2    LOADCELL_3    ENC_POS");
-    Serial.print(g_loadcell_1, 4);
-    Serial.print("        ");
-    Serial.print(g_loadcell_2, 4);
-    Serial.print("        ");
-    Serial.print(g_loadcell_3, 4);
-    Serial.print("              ");
-    Serial.print(g_enc_pos);
-    Serial.print("\n");
-    // Serial.println("==================================================");
-    vTaskDelay( 100 / portTICK_PERIOD_MS );
+    for(int i=0; i<NUMBER_OF_LOADCELL_MODULE; i++)
+    {
+    Serial.print  (g_loadcell[i], 4); Serial.print  ("        ");
+    }
+    Serial.print  ("   ");
+    Serial.print  (g_enc_pos);
+    Serial.print  ("\n");
+    Serial.println("----------------- <Loop Time> -----------------------");
+    Serial.println("Thread 1      Thread 2      Thread 3      Thread 4");
+    for(int i=0; i<NUMBER_OF_RTOS_THREADS; i++)
+    {
+    Serial.print  (loop_time_checker[i], 0); Serial.print(" ms          ");
+    }
+    Serial.print  ("\n");
+
+    vTaskDelay( (1000/RTOS_FREQUENCY_MONITORING) / portTICK_PERIOD_MS );
+  }
+}
+
+/*********************************
+* Serial Communication Update
+**********************************/
+void SerialCommunicationNode(void *pvParameters)
+{
+
+}
+
+
+ 
+static void LEDIndicator(void *pvParameters) {
+  for (;;) {
+      vTaskDelay(500);
+      digitalWrite(BOARD_LED_PIN, HIGH);
+      vTaskDelay(500);
+      digitalWrite(BOARD_LED_PIN, LOW);
   }
 }
 
@@ -555,14 +633,16 @@ void MonitorAllParameters(void *pvParameters)
 
 void setup() {
   // put your setup code here, to run once:
+  delay(1000);
   Serial.begin(115200);
   Serial.print("Initializing...");
-  //pinMode(LED_PIN, OUTPUT);
+  //Serial3.begin(115200);
+  //Serial3.print("asdfasdfasdfasdfasdfasdfasdf");
   pinMode(BOARD_LED_PIN, OUTPUT);
 
-  EncoderInit();
-  MotorInit();
-  LoadCellInit();
+  if(ACTIVE_ENCODER) {EncoderInit();}
+  if(ACTIVE_MOTOR)   {MotorInit();}
+  if(ACTIVE_LOADCELL){LoadCellInit();}
   RTOSInit();
 
   Serial.println("All Initializing DONE.");
@@ -577,64 +657,3 @@ void loop() {
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Setup & Loop >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 //                                  -END-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
- 
-static void task1(void *pvParameters) {
-  for (;;) {
-      vTaskDelay(500);
-      digitalWrite(BOARD_LED_PIN, HIGH);
-      vTaskDelay(500);
-      digitalWrite(BOARD_LED_PIN, LOW);
-  }
-}
- 
-static void task2(void *pvParameters) {
-  for (;;) {
-      vTaskDelay(200);
-      digitalWrite(LED_PIN, HIGH);
-      vTaskDelay(200);
-      digitalWrite(LED_PIN, LOW);
-  }
-}
-
-static void task3(void *pvParameters) {
-  for (;;) {
-      vTaskDelay(500);
-      digitalWrite(PB9, HIGH);
-      vTaskDelay(500);
-      digitalWrite(PB9, LOW);
-  }
-}
-
-static void task4(void *pvParameters) {
-  for (;;) {
-      vTaskDelay(1000);
-      digitalWrite(PC14, HIGH);
-      vTaskDelay(1000);
-      digitalWrite(PC14, LOW);
-  }
-}
-
-static void task5(void *pvParameters) {
-  for (;;) {
-    Serial.println("LOOP");
-    delay(1);
-  }
-}
