@@ -54,17 +54,18 @@
 #define NUMBER_OF_RTOS_THREADS         4
 
 // Utility On & OFF setting
-#define ACTIVE_LOADCELL                1       // 1-ON, 0-OFF
+#define ACTIVE_LOADCELL                0       // 1-ON, 0-OFF
 #define ACTIVE_ENCODER                 1       // 1-ON, 0-OFF
 #define ACTIVE_MOTOR                   1       // 1-ON, 0-OFF
 #define ACTIVE_DATA_MONITORING         1       // 1-ON, 0-OFF
+#define ACTIVE_RTOS_THREAD             1
 
 // ROTS Threads Frequency Setting
 #define RTOS_FREQUENCY                 100     // Hz (Default)
 #define RTOS_FREQUENCY_LOADCELLUPDATE  500     // Hz (Default)
 #define RTOS_FREQUENCY_MOTOR_OPERATION 500     // Hz (Default)
 #define RTOS_FREQUENCY_EEPROM_SAVE     100     // Hz (Default)
-#define RTOS_FREQUENCY_MONITORING      20      // Hz (Default)
+#define RTOS_FREQUENCY_MONITORING      10      // Hz (Default)
 
 ///////////////////////////////////////////////////////////////////////////////////////
 
@@ -165,7 +166,7 @@ static void LEDIndicator();
 static volatile long g_enc_pos = 0;
 static char motor_op_flag = true;
 
-#if ACTIVE_LOADCELL == 1
+#if ACTIVE_LOADCELL
 //HX711 constructor (dout pin, sck pin)
 HX711_ADC LoadCell_1(HX711_DOUT_1, HX711_SCK_1); //HX711 1
 HX711_ADC LoadCell_2(HX711_DOUT_2, HX711_SCK_2); //HX711 2
@@ -185,7 +186,8 @@ volatile float fy;
 volatile float fz;
 
 // monitoring val
-static float loop_time_checker[NUMBER_OF_RTOS_THREADS] = {0};
+static float loop_time_checker[NUMBER_OF_RTOS_THREADS] = {-1};
+
 
 ///////////////////////////////////////////////////////////////////////////////////////
 
@@ -193,14 +195,14 @@ static float loop_time_checker[NUMBER_OF_RTOS_THREADS] = {0};
 
 //==================================================================================================
 /**
- * @note Initializing Functions
+ * @note Encoder Initialize & operate Functions
  *        - START               */
 //==================================================================================================
-
 
 /*********************************
 * Encoder Interrupt & init pos
 **********************************/
+#if ACTIVE_ENCODER
 uint8_t EncoderInit()
 {
   Serial.print("Encoder interrupter Initializing...");
@@ -213,14 +215,80 @@ uint8_t EncoderInit()
   //g_enc_pos = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
   delay(500);
   Serial.print("DONE");
-  Serial.print(" / EEPROM_pos : "); Serial.print(g_enc_pos);
+  Serial.print(" --> EEPROM_pos : "); Serial.print(g_enc_pos);
   Serial.print(" / target Pos : "); Serial.println(TARGET_POS);
   return 1;
 }
 
 /*********************************
+* Encoder Interrupt Phase A
+**********************************/
+void isr_encoder_phase_A()
+{
+  if (digitalRead(ENCODER_PHASE_A) == HIGH) { 
+    // check channel B to see which way encoder is turning
+    if (digitalRead(ENCODER_PAHSE_B) == LOW) {  
+      g_enc_pos += 1;
+    } 
+    else {
+      g_enc_pos -= 1;
+    }
+  }
+  else   // must be a high-to-low edge on channel A                                       
+  { 
+    // check channel B to see which way encoder is turning  
+    if (digitalRead(ENCODER_PAHSE_B) == HIGH) {   
+      g_enc_pos += 1;
+    } 
+    else {
+      g_enc_pos -= 1;
+    }
+  }
+}
+/*********************************
+* Encoder Interrupt Phase B
+**********************************/
+void isr_encoder_phase_B()
+{
+  // look for a low-to-high on channel B
+  if (digitalRead(ENCODER_PAHSE_B) == HIGH) {   
+   // check channel A to see which way encoder is turning
+    if (digitalRead(ENCODER_PHASE_A) == HIGH) {  
+      g_enc_pos += 1;
+    } 
+    else {
+      g_enc_pos -= 1;
+    }
+  }
+  // Look for a high-to-low on channel B
+  else { 
+    // check channel B to see which way encoder is turning  
+    if (digitalRead(ENCODER_PHASE_A) == LOW) {   
+      g_enc_pos += 1;
+    } 
+    else {
+      g_enc_pos -= 1;
+    }
+  }
+}
+#endif
+//==================================================================================================
+/**
+ * @note Encoder Initialize & operate Functions
+ *        - END               */
+//==================================================================================================
+
+
+//==================================================================================================
+/**
+ * @note Motor Initialize & operate Functions
+ *        - START               */
+//==================================================================================================
+
+/*********************************
 * PWM setting (Timer Register)
 **********************************/
+#if ACTIVE_MOTOR
 uint8_t MotorInit()
 {
   Serial.print("Motor Pin & PWM Initializing...");
@@ -249,10 +317,23 @@ uint8_t MotorInit()
   Serial.println("DONE");
   return 1;
 }
+#endif
 
+//==================================================================================================
+/**
+ * @note Motor Initialize & operate Functions
+ *        - END               */
+//==================================================================================================
+
+
+//==================================================================================================
+/**
+ * @note Load Cell Initialize & operate Functions
+ *        - START               */
+//==================================================================================================
+#if ACTIVE_LOADCELL
 uint8_t LoadCellInit()
 {
-  #if ACTIVE_LOADCELL == 1
   Serial.print("Load Cell Inititializing...");
 
   LoadCell_1.begin();
@@ -300,182 +381,15 @@ uint8_t LoadCellInit()
   delay(500);
   Serial.println("Done");
   return 1;
-  
-  #endif
 }
-
-/*********************************
-* RTOS Thread Initializing
-**********************************/
-uint8_t RTOSInit()
-{
-  Serial.print("RTOS Thread Creating...");
-
-  if(ACTIVE_MOTOR)
-  {
-  xTaskCreate(MotorOperation,
-              "MotorOperation",
-              256,
-              NULL,
-              tskIDLE_PRIORITY+2,
-              NULL);
-  }
-
-  if(ACTIVE_LOADCELL)
-  {
-  xTaskCreate(LoadCellUpdateNode,
-              "LoadCellUpdate",
-              768,
-              NULL,
-              tskIDLE_PRIORITY+2,
-              NULL);
-  }
-
-  xTaskCreate(EEPROMSaveNode,
-              "EEPROMSave",
-              128,
-              NULL,
-              tskIDLE_PRIORITY+1,
-              NULL);
-
-  if(ACTIVE_DATA_MONITORING)
-  {
-  xTaskCreate(MonitorAllParametersNode,
-              "MonitorAllParameters",
-              128,
-              NULL,
-              tskIDLE_PRIORITY+1,
-              NULL);
-  }
-
-  xTaskCreate(LEDIndicator,
-              "LEDIndicator_Debug",
-              64,
-              NULL,
-              tskIDLE_PRIORITY,
-              NULL);
-  Serial.println("Done");
-
-  // if vTaskStartScheduler doen't work, under line will be operated.
-  vTaskStartScheduler();
-  Serial.println("vTaskStartScheduler() failed!!!");
-  
-  return 0;
-}
-
-//==================================================================================================
-/**
- * @note Initializing Functions
- *        - END               */
-//==================================================================================================
-
-
-//==================================================================================================
-/**
-* @note Functions - Encoder count : (g_enc_pos)
-*         - START             */
-//==================================================================================================
-
-void isr_encoder_phase_A()
-{
-  if (digitalRead(ENCODER_PHASE_A) == HIGH) { 
-    // check channel B to see which way encoder is turning
-    if (digitalRead(ENCODER_PAHSE_B) == LOW) {  
-      g_enc_pos += 1;
-    } 
-    else {
-      g_enc_pos -= 1;
-    }
-  }
-  else   // must be a high-to-low edge on channel A                                       
-  { 
-    // check channel B to see which way encoder is turning  
-    if (digitalRead(ENCODER_PAHSE_B) == HIGH) {   
-      g_enc_pos += 1;
-    } 
-    else {
-      g_enc_pos -= 1;
-    }
-  }
-}
-
-void isr_encoder_phase_B()
-{
-  // look for a low-to-high on channel B
-  if (digitalRead(ENCODER_PAHSE_B) == HIGH) {   
-   // check channel A to see which way encoder is turning
-    if (digitalRead(ENCODER_PHASE_A) == HIGH) {  
-      g_enc_pos += 1;
-    } 
-    else {
-      g_enc_pos -= 1;
-    }
-  }
-  // Look for a high-to-low on channel B
-  else { 
-    // check channel B to see which way encoder is turning  
-    if (digitalRead(ENCODER_PHASE_A) == LOW) {   
-      g_enc_pos += 1;
-    } 
-    else {
-      g_enc_pos -= 1;
-    }
-  }
-}
-//==================================================================================================
-/**
-* @note Functions - Encoder count : (g_enc_pos)
-*         - END             */
-//==================================================================================================
-
-
-//==================================================================================================
-/**
-* @note EEPROM write(save) & read functions
-*         - START             */
-//==================================================================================================
-
-long EEPROMReadlong(int address) {
-  long four = EEPROM.read(address);
-  long three = EEPROM.read(address + 1);
-  long two = EEPROM.read(address + 2);
-  long one = EEPROM.read(address + 3);
-  
-  return ((four << 0) & 0xFF) + ((three << 8) & 0xFFFF) + ((two << 16) & 0xFFFFFF) + ((one << 24) & 0xFFFFFFFF);
-}
-
-void EEPROMWritelong(int address, long value) {
-  byte four = (value & 0xFF);
-  byte three = ((value >> 8) & 0xFF);
-  byte two = ((value >> 16) & 0xFF);
-  byte one = ((value >> 24) & 0xFF);
-  
-  EEPROM.write(address, four);
-  EEPROM.write(address + 1, three);
-  EEPROM.write(address + 2, two);
-  EEPROM.write(address + 3, one);
-}
-//==================================================================================================
-/**
-* @note EEPROM write(save) & read functions
-*         - END             */
-//==================================================================================================
-
-
-//==================================================================================================
-/**
-* @note Operation Functions of RTOS Threads
-*         - START             */
-//==================================================================================================
 
 /*********************************
 * Load Cell data Update
 **********************************/
 void LoadCellUpdateNode(void *pvParameters)
 {
-  #if ACTIVE_LOADCELL == 1
-  static unsigned long curt_time = 0;
-  static unsigned long prev_time = 0;
+  static unsigned long curt_time = millis();
+  static unsigned long prev_time = millis();
   static unsigned long temp_time = 0;
 
   while(true)
@@ -492,19 +406,58 @@ void LoadCellUpdateNode(void *pvParameters)
     g_loadcell[2] = LoadCell_3.getData();
 
     loop_time_checker[0] = temp_time;
+    // vTaskDelay( (1000/RTOS_FREQUENCY_LOADCELLUPDATE - (int)temp_time) / portTICK_PERIOD_MS );
     vTaskDelay( (1000/RTOS_FREQUENCY_LOADCELLUPDATE) / portTICK_PERIOD_MS );
   }
-  #endif
+}
+#endif
+//==================================================================================================
+/**
+ * @note Load Cell Initialize & operate Functions
+ *        - END               */
+//==================================================================================================
+
+
+//==================================================================================================
+/**
+* @note EEPROM write(save) & read functions
+*         - START             */
+//==================================================================================================
+
+/*********************************
+* EEPROM read
+**********************************/
+long EEPROMReadlong(int address) {
+  long four = EEPROM.read(address);
+  long three = EEPROM.read(address + 1);
+  long two = EEPROM.read(address + 2);
+  long one = EEPROM.read(address + 3);
+  
+  return ((four << 0) & 0xFF) + ((three << 8) & 0xFFFF) + ((two << 16) & 0xFFFFFF) + ((one << 24) & 0xFFFFFFFF);
 }
 
+/*********************************
+* EEPROM write
+**********************************/
+void EEPROMWritelong(int address, long value) {
+  byte four = (value & 0xFF);
+  byte three = ((value >> 8) & 0xFF);
+  byte two = ((value >> 16) & 0xFF);
+  byte one = ((value >> 24) & 0xFF);
+  
+  EEPROM.write(address, four);
+  EEPROM.write(address + 1, three);
+  EEPROM.write(address + 2, two);
+  EEPROM.write(address + 3, one);
+}
 
 /*********************************
 * EEPROM Update (g_enc_pos update)
 **********************************/
 void EEPROMSaveNode(void *pvParameters)
 {
-  static unsigned long curt_time = 0;
-  static unsigned long prev_time = 0;
+  static unsigned long curt_time = millis();
+  static unsigned long prev_time = millis();
   static unsigned long temp_time = 0;
 
   while(true)
@@ -517,9 +470,19 @@ void EEPROMSaveNode(void *pvParameters)
     long k = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
 
     loop_time_checker[1] = temp_time;
+    // vTaskDelay( (1000/RTOS_FREQUENCY_EEPROM_SAVE - (int)temp_time) / portTICK_PERIOD_MS ); ;
     vTaskDelay( (1000/RTOS_FREQUENCY_EEPROM_SAVE) / portTICK_PERIOD_MS ); ;
   }
 }
+//==================================================================================================
+/**
+* @note EEPROM write(save) & read functions
+*         - END             */
+//==================================================================================================
+
+
+
+
 
 
 /**
@@ -529,8 +492,8 @@ void EEPROMSaveNode(void *pvParameters)
  */
 void MotorOperation(void *pvParameters)
 {
-  static unsigned long curt_time = 0;
-  static unsigned long prev_time = 0;
+  static unsigned long curt_time = millis();
+  static unsigned long prev_time = millis();
   static unsigned long temp_time = 0;
 
   while(true)
@@ -566,6 +529,7 @@ void MotorOperation(void *pvParameters)
     }
 
     loop_time_checker[2] = temp_time;
+    // vTaskDelay( (1000/RTOS_FREQUENCY_MOTOR_OPERATION - (int)temp_time) / (portTICK_PERIOD_MS)  );
     vTaskDelay( (1000/RTOS_FREQUENCY_MOTOR_OPERATION) / (portTICK_PERIOD_MS)  );
   }
 }
@@ -573,10 +537,19 @@ void MotorOperation(void *pvParameters)
 /*********************************
 * Monitoring Data & loop time of each Threads
 **********************************/
+#if ACTIVE_DATA_MONITORING
 void MonitorAllParametersNode(void *pvParameters)
 {
+  static unsigned long curt_time = millis();
+  static unsigned long prev_time = millis();
+  static unsigned long temp_time = 0;
+
   while(true)
   {
+    curt_time = millis();
+    temp_time = curt_time - prev_time;
+    prev_time = curt_time;
+
     Serial.println("=====================================================");
     Serial.println("-------------------- <Data> -------------------------");
     Serial.println("LOADCELL_1    LOADCELL_2    LOADCELL_3    ENC_POS");
@@ -598,6 +571,7 @@ void MonitorAllParametersNode(void *pvParameters)
     vTaskDelay( (1000/RTOS_FREQUENCY_MONITORING) / portTICK_PERIOD_MS );
   }
 }
+#endif
 
 /*********************************
 * Serial Communication Update
@@ -607,8 +581,9 @@ void SerialCommunicationNode(void *pvParameters)
 
 }
 
-
- 
+/*********************************
+* Indicator for operating successfully
+**********************************/
 static void LEDIndicator(void *pvParameters) {
   for (;;) {
       vTaskDelay(500);
@@ -625,7 +600,75 @@ static void LEDIndicator(void *pvParameters) {
 //==================================================================================================
 
 
+//==================================================================================================
+/**
+ * @note RTOS Threads Initialize Functions
+ *        - START               */
+//==================================================================================================
 
+/*********************************
+* RTOS Thread Initializing
+**********************************/
+#if ACTIVE_RTOS_THREAD
+uint8_t RTOSInit()
+{
+  Serial.print("RTOS Thread Creating...");
+
+  #if ACTIVE_MOTOR
+  xTaskCreate(MotorOperation,
+              "MotorOperation",
+              256,
+              NULL,
+              tskIDLE_PRIORITY+2,
+              NULL);
+  #endif
+
+  #if ACTIVE_LOADCELL
+  xTaskCreate(LoadCellUpdateNode,
+              "LoadCellUpdate",
+              768,
+              NULL,
+              tskIDLE_PRIORITY+2,
+              NULL);
+  #endif
+
+  #if ACTIVE_DATA_MONITORING
+
+  xTaskCreate(MonitorAllParametersNode,
+              "MonitorAllParameters",
+              128,
+              NULL,
+              tskIDLE_PRIORITY+1,
+              NULL);
+  #endif
+
+  xTaskCreate(EEPROMSaveNode,
+              "EEPROMSave",
+              128,
+              NULL,
+              tskIDLE_PRIORITY+1,
+              NULL);
+
+  xTaskCreate(LEDIndicator,
+              "LEDIndicator_Debug",
+              64,
+              NULL,
+              tskIDLE_PRIORITY,
+              NULL);
+  Serial.println("Done");
+
+  // if vTaskStartScheduler doen't work, under line will be operated.
+  vTaskStartScheduler();
+  Serial.println("vTaskStartScheduler() failed!!!");
+  
+  return 0;
+}
+#endif
+//==================================================================================================
+/**
+ * @note RTOS Threads Initialize Functions
+ *        - END               */
+//==================================================================================================
 
 
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Setup & Loop >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -633,17 +676,21 @@ static void LEDIndicator(void *pvParameters) {
 
 void setup() {
   // put your setup code here, to run once:
-  delay(1000);
+  delay(2000);
   Serial.begin(115200);
-  Serial.print("Initializing...");
+  Serial.println("Initializing...");
   //Serial3.begin(115200);
   //Serial3.print("asdfasdfasdfasdfasdfasdfasdf");
   pinMode(BOARD_LED_PIN, OUTPUT);
+  for(int i=0; i<NUMBER_OF_RTOS_THREADS; i++)
+  {
+  loop_time_checker[i] = -7777;
+  }
 
-  if(ACTIVE_ENCODER) {EncoderInit();}
-  if(ACTIVE_MOTOR)   {MotorInit();}
-  if(ACTIVE_LOADCELL){LoadCellInit();}
-  RTOSInit();
+  if(ACTIVE_ENCODER)     EncoderInit();
+  if(ACTIVE_MOTOR)       MotorInit();
+  if(ACTIVE_LOADCELL)    LoadCellInit();
+  if(ACTIVE_RTOS_THREAD) RTOSInit();
 
   Serial.println("All Initializing DONE.");
 }
