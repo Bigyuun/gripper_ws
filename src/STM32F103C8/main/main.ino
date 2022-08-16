@@ -133,7 +133,7 @@
 /*********************************
  * Setting info
  *********************************/
-#define TARGET_RESOULTION   3.466
+#define TARGET_RESOULTION   3.814814814
 #define TARGET_POS          (GEAR_RATIO * ENCODER_RESOLUTION * 4 * TARGET_RESOULTION)
 // #define TARGET_POS          10
 
