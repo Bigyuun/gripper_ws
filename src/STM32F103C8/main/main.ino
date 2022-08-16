@@ -54,7 +54,7 @@
 #define NUMBER_OF_RTOS_THREADS         4
 
 // Utility On & OFF setting
-#define ACTIVE_LOADCELL                0       // 1-ON, 0-OFF
+#define ACTIVE_LOADCELL                1       // 1-ON, 0-OFF
 #define ACTIVE_ENCODER                 1       // 1-ON, 0-OFF
 #define ACTIVE_MOTOR                   1       // 1-ON, 0-OFF
 #define ACTIVE_DATA_MONITORING         1       // 1-ON, 0-OFF
@@ -78,44 +78,44 @@
 /*********************************
  * MCU
  *********************************/
-#define CPU_CLOCK_SPEED  72    // mHz
+#define CPU_CLOCK_SPEED       72    // mHz
 
 /*********************************
  * PWM Timer 
  *********************************/
-#define PRESCALER        1
-#define COUNTER_PERIOD   3600
-#define DUTY_MAX         3600   // same as COUNTER_PERIOD
-#define DUTY_MIN         0
+#define PRESCALER             1
+#define COUNTER_PERIOD        3600
+#define DUTY_MAX              3600   // same as COUNTER_PERIOD
+#define DUTY_MIN              0
 
 /*********************************
  * Pin match
  *********************************/
 // Encoder pin (interrupt)
-#define ENCODER_PHASE_A  PA0    
-#define ENCODER_PAHSE_B  PA1
+#define PIN_ENCODER_PHASE_A  PA0    
+#define PIN_ENCODER_PAHSE_B  PA1
 
 // Motor Conrol pin   
-#define MOTOR_PWM_PIN    PA2      
-#define MOTOR_CCW        PA3
-#define MOTOR_CW         PA4
+#define PIN_MOTOR_PWM        PA2      
+#define PIN_MOTOR_CCW        PA3
+#define PIN_MOTOR_CW         PA4
 
 // Load Cell pin  
-#define HX711_DOUT_1     PB4   //mcu > HX711 no 1 dout pin
-#define HX711_SCK_1      PB5   //mcu > HX711 no 1 sck pin
-#define HX711_DOUT_2     PB6   //mcu > HX711 no 2 dout pin
-#define HX711_SCK_2      PB7   //mcu > HX711 no 2 sck pin
-#define HX711_DOUT_3     PB8   //mcu > HX711 no 3 dout pin
-#define HX711_SCK_3      PB9   //mcu > HX711 no 3 sck pin
+#define HX711_DOUT_1         PB4   //mcu > HX711 no 1 dout pin
+#define HX711_SCK_1          PB5   //mcu > HX711 no 1 sck pin
+#define HX711_DOUT_2         PB6   //mcu > HX711 no 2 dout pin
+#define HX711_SCK_2          PB7   //mcu > HX711 no 2 sck pin
+#define HX711_DOUT_3         PB8   //mcu > HX711 no 3 dout pin
+#define HX711_SCK_3          PB9   //mcu > HX711 no 3 sck pin
 
 // Debug & Test pin
-#define BOARD_LED_PIN    PC13
-#define LED_PIN          PB9
+#define PIN_BOARD_LED        PC13
+#define PIN_LED              PB9
 
 /*********************************
  * Motor info
  *********************************/
-#define GEAR_RATIO       298
+#define GEAR_RATIO           298
 
 /*********************************
  * Encoder info
@@ -133,8 +133,9 @@
 /*********************************
  * Setting info
  *********************************/
-#define TARGET_RESOULTION   5
+#define TARGET_RESOULTION   3.466
 #define TARGET_POS          (GEAR_RATIO * ENCODER_RESOLUTION * 4 * TARGET_RESOULTION)
+// #define TARGET_POS          10
 
 
 /*********************************
@@ -206,14 +207,14 @@ static float loop_time_checker[NUMBER_OF_RTOS_THREADS] = {-1};
 uint8_t EncoderInit()
 {
   Serial.print("Encoder interrupter Initializing...");
-  pinMode(ENCODER_PHASE_A, INPUT);
-  pinMode(ENCODER_PAHSE_B, INPUT);
-  attachInterrupt(digitalPinToInterrupt(ENCODER_PHASE_A), isr_encoder_phase_A, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(ENCODER_PAHSE_B), isr_encoder_phase_B, CHANGE);
+  pinMode(PIN_ENCODER_PHASE_A, INPUT);
+  pinMode(PIN_ENCODER_PAHSE_B, INPUT);
+  attachInterrupt(digitalPinToInterrupt(PIN_ENCODER_PHASE_A), isr_encoder_phase_A, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(PIN_ENCODER_PAHSE_B), isr_encoder_phase_B, CHANGE);
 
   g_enc_pos = 0;
   //g_enc_pos = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
-  delay(500);
+  delay(100);
   Serial.print("DONE");
   Serial.print(" --> EEPROM_pos : "); Serial.print(g_enc_pos);
   Serial.print(" / target Pos : "); Serial.println(TARGET_POS);
@@ -225,9 +226,9 @@ uint8_t EncoderInit()
 **********************************/
 void isr_encoder_phase_A()
 {
-  if (digitalRead(ENCODER_PHASE_A) == HIGH) { 
+  if (digitalRead(PIN_ENCODER_PHASE_A) == HIGH) { 
     // check channel B to see which way encoder is turning
-    if (digitalRead(ENCODER_PAHSE_B) == LOW) {  
+    if (digitalRead(PIN_ENCODER_PAHSE_B) == LOW) {  
       g_enc_pos += 1;
     } 
     else {
@@ -237,7 +238,7 @@ void isr_encoder_phase_A()
   else   // must be a high-to-low edge on channel A                                       
   { 
     // check channel B to see which way encoder is turning  
-    if (digitalRead(ENCODER_PAHSE_B) == HIGH) {   
+    if (digitalRead(PIN_ENCODER_PAHSE_B) == HIGH) {   
       g_enc_pos += 1;
     } 
     else {
@@ -251,9 +252,9 @@ void isr_encoder_phase_A()
 void isr_encoder_phase_B()
 {
   // look for a low-to-high on channel B
-  if (digitalRead(ENCODER_PAHSE_B) == HIGH) {   
+  if (digitalRead(PIN_ENCODER_PAHSE_B) == HIGH) {   
    // check channel A to see which way encoder is turning
-    if (digitalRead(ENCODER_PHASE_A) == HIGH) {  
+    if (digitalRead(PIN_ENCODER_PHASE_A) == HIGH) {  
       g_enc_pos += 1;
     } 
     else {
@@ -263,7 +264,7 @@ void isr_encoder_phase_B()
   // Look for a high-to-low on channel B
   else { 
     // check channel B to see which way encoder is turning  
-    if (digitalRead(ENCODER_PHASE_A) == LOW) {   
+    if (digitalRead(PIN_ENCODER_PHASE_A) == LOW) {   
       g_enc_pos += 1;
     } 
     else {
@@ -293,15 +294,13 @@ uint8_t MotorInit()
 {
   Serial.print("Motor Pin & PWM Initializing...");
 
-  pinMode(MOTOR_CW, OUTPUT);
-  pinMode(MOTOR_CCW, OUTPUT);
+  pinMode(PIN_MOTOR_CW, OUTPUT);
+  pinMode(PIN_MOTOR_CCW, OUTPUT);
+  digitalWrite(PIN_MOTOR_CW, LOW);
+  digitalWrite(PIN_MOTOR_CCW, LOW);  
 
-  digitalWrite(MOTOR_CW, HIGH);
-  digitalWrite(MOTOR_CCW, LOW);
-  // put your setup code here, to run once:
-  
-
-  pinMode(MOTOR_PWM_PIN, PWM);
+  pinMode(PIN_MOTOR_PWM, PWM);
+  pwmWrite(PIN_MOTOR_PWM, DUTY_MIN);
 
   HardwareTimer pwmtimer2(2);  
   pwmtimer2.pause();
@@ -311,13 +310,84 @@ uint8_t MotorInit()
   pwmtimer2.refresh();
   pwmtimer2.resume();
 
-  pwmWrite(MOTOR_PWM_PIN, DUTY_MIN);
 
-  delay(500);
+
+  delay(100);
   Serial.println("DONE");
   return 1;
 }
 #endif
+
+/*********************************
+* Motor Operating Function
+**********************************/
+void MotorOperation(void *pvParameters)
+{
+  static unsigned long curt_time = millis();
+  static unsigned long prev_time = millis();
+  static unsigned long temp_time = 0;
+
+  while(true)
+  {
+    curt_time = millis();
+    temp_time = curt_time - prev_time;
+    prev_time = curt_time;
+
+    if (g_enc_pos >= TARGET_POS || g_enc_pos <= -TARGET_POS)
+    {
+      // digitalWrite(MOTOR_CW, LOW);
+      // digitalWrite(MOTOR_CCW, HIGH);
+
+      digitalWrite(PIN_MOTOR_CW, LOW);
+      digitalWrite(PIN_MOTOR_CCW, LOW);
+
+      pwmWrite(PIN_MOTOR_PWM, DUTY_MIN);
+      motor_op_flag = 0;
+    }
+    else
+    {
+      // digitalWrite(PIN_MOTOR_CW, LOW);
+      // digitalWrite(PIN_MOTOR_CCW, HIGH);
+
+      digitalWrite(PIN_MOTOR_CW, HIGH);
+      digitalWrite(PIN_MOTOR_CCW, LOW);
+      pwmWrite(PIN_MOTOR_PWM, (int)(DUTY_MAX / 5));
+      motor_op_flag = 1;
+    }
+
+    loop_time_checker[2] = temp_time;
+    // vTaskDelay( (1000/RTOS_FREQUENCY_MOTOR_OPERATION - (int)temp_time) / (portTICK_PERIOD_MS)  );
+    vTaskDelay( (1000/RTOS_FREQUENCY_MOTOR_OPERATION) / (portTICK_PERIOD_MS)  );
+  }
+}
+
+/*********************************
+* Motor Home position
+**********************************/
+uint8_t MotorHoming()
+{
+  if(g_enc_pos >= 100)
+  {
+    digitalWrite(PIN_MOTOR_CW, LOW);
+    digitalWrite(PIN_MOTOR_CCW, HIGH);
+    pwmWrite(PIN_MOTOR_PWM, (int)(DUTY_MAX / 10));
+  }
+  else if(g_enc_pos <= -100)
+  {
+    digitalWrite(PIN_MOTOR_CW, HIGH);
+    digitalWrite(PIN_MOTOR_CCW, LOW);
+    pwmWrite(PIN_MOTOR_PWM, (int)(DUTY_MAX / 10));
+  }
+  else
+  {
+    digitalWrite(PIN_MOTOR_CW, LOW);
+    digitalWrite(PIN_MOTOR_CCW, LOW);
+    pwmWrite(PIN_MOTOR_PWM, DUTY_MIN);
+  }
+}
+
+
+
 
 //==================================================================================================
 /**
@@ -378,7 +448,7 @@ uint8_t LoadCellInit()
   LoadCell_2.setCalFactor(CALIBRATION_VALUE); // user set calibration value (float)
   LoadCell_3.setCalFactor(CALIBRATION_VALUE); // user set calibration value (float)
 
-  delay(500);
+  delay(100);
   Serial.println("Done");
   return 1;
 }
@@ -467,7 +537,7 @@ void EEPROMSaveNode(void *pvParameters)
     prev_time = curt_time;
 
     EEPROMWritelong(ENCODER_POS_EEPROM_ADDRESS, g_enc_pos);
-    long k = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
+    // long k = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
 
     loop_time_checker[1] = temp_time;
     // vTaskDelay( (1000/RTOS_FREQUENCY_EEPROM_SAVE - (int)temp_time) / portTICK_PERIOD_MS ); ;
@@ -485,54 +555,6 @@ void EEPROMSaveNode(void *pvParameters)
 
 
 
-/**
- * @brief Motor Operation Thread function
- * 
- * @param pvParameters 
- */
-void MotorOperation(void *pvParameters)
-{
-  static unsigned long curt_time = millis();
-  static unsigned long prev_time = millis();
-  static unsigned long temp_time = 0;
-
-  while(true)
-  {
-    curt_time = millis();
-    temp_time = curt_time - prev_time;
-    prev_time = curt_time;
-
-    if(motor_op_flag == 1)
-    {
-       if(g_enc_pos >= TARGET_POS || g_enc_pos <= -TARGET_POS)
-       {
-          // digitalWrite(MOTOR_CW, LOW);
-          // digitalWrite(MOTOR_CCW, HIGH);
-
-          digitalWrite(MOTOR_CW, HIGH);
-          digitalWrite(MOTOR_CCW, LOW);
-
-          pwmWrite(MOTOR_PWM_PIN, DUTY_MIN);
-          motor_op_flag = 0;
-          Serial.print("Encoder Counter : "); Serial.println(g_enc_pos);
-       }
-       else
-       {
-          // digitalWrite(MOTOR_CW, HIGH);
-          // digitalWrite(MOTOR_CCW, LOW);
-
-          digitalWrite(MOTOR_CW, LOW);
-          digitalWrite(MOTOR_CCW, HIGH);
-          pwmWrite(MOTOR_PWM_PIN, DUTY_MAX/5);
-          motor_op_flag = 1;
-       }
-    }
-
-    loop_time_checker[2] = temp_time;
-    // vTaskDelay( (1000/RTOS_FREQUENCY_MOTOR_OPERATION - (int)temp_time) / (portTICK_PERIOD_MS)  );
-    vTaskDelay( (1000/RTOS_FREQUENCY_MOTOR_OPERATION) / (portTICK_PERIOD_MS)  );
-  }
-}
 
 /*********************************
 * Monitoring Data & loop time of each Threads
@@ -587,9 +609,9 @@ void SerialCommunicationNode(void *pvParameters)
 static void LEDIndicator(void *pvParameters) {
   for (;;) {
       vTaskDelay(500);
-      digitalWrite(BOARD_LED_PIN, HIGH);
+      digitalWrite(PIN_BOARD_LED, HIGH);
       vTaskDelay(500);
-      digitalWrite(BOARD_LED_PIN, LOW);
+      digitalWrite(PIN_BOARD_LED, LOW);
   }
 }
 
@@ -681,10 +703,10 @@ void setup() {
   Serial.println("Initializing...");
   //Serial3.begin(115200);
   //Serial3.print("asdfasdfasdfasdfasdfasdfasdf");
-  pinMode(BOARD_LED_PIN, OUTPUT);
+  pinMode(PIN_BOARD_LED, OUTPUT);
   for(int i=0; i<NUMBER_OF_RTOS_THREADS; i++)
   {
-  loop_time_checker[i] = -7777;
+  loop_time_checker[i] = -1;
   }
 
   if(ACTIVE_ENCODER)     EncoderInit();
@@ -693,6 +715,7 @@ void setup() {
   if(ACTIVE_RTOS_THREAD) RTOSInit();
 
   Serial.println("All Initializing DONE.");
+  delay(2000);
 }
 
 void loop() {

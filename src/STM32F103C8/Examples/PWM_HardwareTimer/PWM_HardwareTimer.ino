@@ -21,15 +21,15 @@ void setup() {
   pwmtimer2.resume();
 
 //  pwmWrite(PA11, 0);
-  pwmWrite(PA2, 0);
+  pwmWrite(PA2, 1800);
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
-  for(int i=0; i<3600; i++)
-  {
-//    pwmWrite(PA11, i);
-    pwmWrite(PA2, i);
-    delay(1);
-  }
+//  for(int i=0; i<3600; i++)
+//  {
+////    pwmWrite(PA11, i);
+//    pwmWrite(PA2, i);
+//    delay(1);
+//  }
 }
