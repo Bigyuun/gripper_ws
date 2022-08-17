@@ -165,7 +165,7 @@ static void LEDIndicator();
  * Global variables
  *********************************/
 static volatile long g_enc_pos = 0;
-static char motor_op_flag = true;
+static char motor_op_flag = 1;
 
 #if ACTIVE_LOADCELL
 //HX711 constructor (dout pin, sck pin)
@@ -188,8 +188,8 @@ volatile float fz;
 
 // monitoring val
 static float loop_time_checker[NUMBER_OF_RTOS_THREADS] = {-1};
-
-
+static bool allparameters_monitoring_flag = true;
+static char motor_direction = -1;
 ///////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -213,7 +213,7 @@ uint8_t EncoderInit()
   attachInterrupt(digitalPinToInterrupt(PIN_ENCODER_PAHSE_B), isr_encoder_phase_B, CHANGE);
 
   g_enc_pos = 0;
-  //g_enc_pos = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
+  g_enc_pos = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
   delay(100);
   Serial.print("DONE");
   Serial.print(" --> EEPROM_pos : "); Serial.print(g_enc_pos);
@@ -333,27 +333,55 @@ void MotorOperation(void *pvParameters)
     temp_time = curt_time - prev_time;
     prev_time = curt_time;
 
-    if (g_enc_pos >= TARGET_POS || g_enc_pos <= -TARGET_POS)
+    if (motor_op_flag == 1)
     {
-      // digitalWrite(MOTOR_CW, LOW);
-      // digitalWrite(MOTOR_CCW, HIGH);
-
-      digitalWrite(PIN_MOTOR_CW, LOW);
-      digitalWrite(PIN_MOTOR_CCW, LOW);
-
-      pwmWrite(PIN_MOTOR_PWM, DUTY_MIN);
-      motor_op_flag = 0;
+      if (g_enc_pos >= TARGET_POS*2/3)
+      {
+        motor_op_flag = 0;
+        pwmWrite(PIN_MOTOR_PWM, DUTY_MIN);
+        digitalWrite(PIN_MOTOR_CW, LOW);
+        digitalWrite(PIN_MOTOR_CCW, LOW);
+        delay(1000);
+      }
+      else
+      {
+        pwmWrite(PIN_MOTOR_PWM, DUTY_MAX/3);
+        digitalWrite(PIN_MOTOR_CW, HIGH);
+        digitalWrite(PIN_MOTOR_CCW, LOW);
+      }
+    }
+    else if (motor_op_flag == 0)
+    {
+      if (g_enc_pos <= 0)
+      {
+        motor_op_flag = 9;
+        pwmWrite(PIN_MOTOR_PWM, DUTY_MIN);
+        digitalWrite(PIN_MOTOR_CW, LOW);
+        digitalWrite(PIN_MOTOR_CCW, LOW);
+        delay(1000);
+      }
+      else
+      {
+        pwmWrite(PIN_MOTOR_PWM, DUTY_MAX/3);
+        digitalWrite(PIN_MOTOR_CW, LOW);
+        digitalWrite(PIN_MOTOR_CCW, HIGH);
+      }
     }
     else
     {
-      // digitalWrite(PIN_MOTOR_CW, LOW);
-      // digitalWrite(PIN_MOTOR_CCW, HIGH);
-
-      digitalWrite(PIN_MOTOR_CW, HIGH);
+      pwmWrite(PIN_MOTOR_PWM, DUTY_MIN);
+      digitalWrite(PIN_MOTOR_CW, LOW);
       digitalWrite(PIN_MOTOR_CCW, LOW);
-      pwmWrite(PIN_MOTOR_PWM, (int)(DUTY_MAX / 5));
-      motor_op_flag = 1;
     }
+
+    // pwmWrite(PIN_MOTOR_PWM, DUTY_MAX/5);
+    // digitalWrite(PIN_MOTOR_CW, LOW);
+    // digitalWrite(PIN_MOTOR_CCW, HIGH);
+
+
+    // pwmWrite(PIN_MOTOR_PWM, DUTY_MAX/5);
+    // digitalWrite(PIN_MOTOR_CW, HIGH);
+    // digitalWrite(PIN_MOTOR_CCW, LOW);
 
     loop_time_checker[2] = temp_time;
     // vTaskDelay( (1000/RTOS_FREQUENCY_MOTOR_OPERATION - (int)temp_time) / (portTICK_PERIOD_MS)  );
@@ -568,27 +596,31 @@ void MonitorAllParametersNode(void *pvParameters)
 
   while(true)
   {
-    curt_time = millis();
-    temp_time = curt_time - prev_time;
-    prev_time = curt_time;
-
-    Serial.println("=====================================================");
-    Serial.println("-------------------- <Data> -------------------------");
-    Serial.println("LOADCELL_1    LOADCELL_2    LOADCELL_3    ENC_POS");
-    for(int i=0; i<NUMBER_OF_LOADCELL_MODULE; i++)
+    // curt_time = millis();
+    // temp_time = curt_time - prev_time;
+    // prev_time = curt_time;
+    if(allparameters_monitoring_flag)
     {
-    Serial.print  (g_loadcell[i], 4); Serial.print  ("        ");
+      Serial.println("=====================================================");
+      Serial.println("-------------------- <Data> -------------------------");
+      Serial.println("LOADCELL_1    LOADCELL_2    LOADCELL_3    ENC_POS");
+      for (int i = 0; i < NUMBER_OF_LOADCELL_MODULE; i++)
+      {
+        Serial.print(g_loadcell[i], 4);
+        Serial.print("        ");
+      }
+      Serial.print("   ");
+      Serial.print(g_enc_pos);
+      Serial.print("\n");
+      Serial.println("----------------- <Loop Time> -----------------------");
+      Serial.println("Thread 1      Thread 2      Thread 3      Thread 4");
+      for (int i = 0; i < NUMBER_OF_RTOS_THREADS; i++)
+      {
+        Serial.print(loop_time_checker[i], 0);
+        Serial.print(" ms          ");
+      }
+      Serial.print("\n");
     }
-    Serial.print  ("   ");
-    Serial.print  (g_enc_pos);
-    Serial.print  ("\n");
-    Serial.println("----------------- <Loop Time> -----------------------");
-    Serial.println("Thread 1      Thread 2      Thread 3      Thread 4");
-    for(int i=0; i<NUMBER_OF_RTOS_THREADS; i++)
-    {
-    Serial.print  (loop_time_checker[i], 0); Serial.print(" ms          ");
-    }
-    Serial.print  ("\n");
 
     vTaskDelay( (1000/RTOS_FREQUENCY_MONITORING) / portTICK_PERIOD_MS );
   }
@@ -600,7 +632,53 @@ void MonitorAllParametersNode(void *pvParameters)
 **********************************/
 void SerialCommunicationNode(void *pvParameters)
 {
+  Serial.println("================================ Command Info ======================================");
+  Serial.println("c : clockwise   / cw : counter clockwise / z : enc_pos = 0 / m : monitoring parameters");
+  Serial.println("r : run 1 cycle / s : stop motor         / mm : Not monitoring parameters");
+  Serial.println("====================================================================================");
+  Serial.print("Input command : ");
 
+  while (true)
+  {
+    String str_command;
+    if(Serial.available())
+    {
+      str_command = Serial.readString();
+      Serial.println(str_command);
+    }
+    else continue;
+
+    if(str_command == "c")       
+    {
+      motor_direction = 1;
+      digitalWrite(PIN_MOTOR_CW, HIGH);
+      digitalWrite(PIN_MOTOR_CCW, LOW);
+    }
+    else if(str_command == "cw")
+    {
+      motor_direction = 0;
+      digitalWrite(PIN_MOTOR_CW, HIGH);
+      digitalWrite(PIN_MOTOR_CCW, LOW);
+    }
+    else if(str_command == "z")
+    {
+      g_enc_pos = 0;
+    }
+    else if(str_command == "r")  
+    {
+      // motor_op_flag = 1;
+      pwmWrite(PIN_MOTOR_PWM, DUTY_MAX/5);
+    }
+    else if(str_command == "s")
+    {
+      // motor_op_flag = 0;
+      pwmWrite(PIN_MOTOR_PWM, DUTY_MIN);
+      digitalWrite(PIN_MOTOR_CW, LOW);
+      digitalWrite(PIN_MOTOR_CCW, LOW);
+    }
+    else if(str_command == "m")  allparameters_monitoring_flag = true;
+    else if(str_command == "mm") allparameters_monitoring_flag = false;
+  }
 }
 
 /*********************************
@@ -648,7 +726,7 @@ uint8_t RTOSInit()
   #if ACTIVE_LOADCELL
   xTaskCreate(LoadCellUpdateNode,
               "LoadCellUpdate",
-              768,
+              600,
               NULL,
               tskIDLE_PRIORITY+2,
               NULL);
@@ -663,6 +741,13 @@ uint8_t RTOSInit()
               tskIDLE_PRIORITY+1,
               NULL);
   #endif
+
+  // xTaskCreate(SerialCommunicationNode,
+  //             "SerialCommunicationNode",
+  //             128,
+  //             NULL,
+  //             tskIDLE_PRIORITY+1,
+  //             NULL);
 
   xTaskCreate(EEPROMSaveNode,
               "EEPROMSave",
