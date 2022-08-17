@@ -126,9 +126,13 @@
 /*********************************
  * Encoder info
  *********************************/
-#define CALIBRATION_VALUE           2072.0 // calibration value load cell 1
-#define CALIBRATION_VALUE_2         2072.0 // calibration value load cell 1
-#define CALIBRATION_VALUE_3         2072.0 // calibration value load cell 1
+// #define CALIBRATION_VALUE           2072.0 // calibration value load cell 1
+// #define CALIBRATION_VALUE_2         2072.0 // calibration value load cell 2
+// #define CALIBRATION_VALUE_3         2072.0 // calibration value load cell 3
+
+#define CALIBRATION_VALUE           2935.8 // calibration value load cell 1
+#define CALIBRATION_VALUE_2         2987.0 // calibration value load cell 2
+#define CALIBRATION_VALUE_3         3072.0 // calibration value load cell 3
 
 /*********************************
  * Setting info
@@ -352,13 +356,30 @@ void MotorOperation(void *pvParameters)
     temp_time = curt_time - prev_time;
     prev_time = curt_time;
 
-    if(motor_op_case == 'Z') MotorLoadcellZeroSet(100);
-    if(motor_op_case == 'H') MotorHoming();
-    if( isDigit(motor_op_case) )
+    if(motor_op_case == 'L') MotorLoadcellZeroSet(150);
+    else if(motor_op_case == 'H') MotorHoming();
+    else if( isDigit(motor_op_case) )
     {
       int case_int = motor_op_case - '0';
       MotorPositionMove(case_int);
     }
+    else if (motor_op_case == 'O')
+    {
+      if (g_enc_pos <= -ONE_RESOLUTION)
+      {
+        pwmWrite(PIN_MOTOR_PWM, DUTY_MIN);
+        digitalWrite(PIN_MOTOR_CW, LOW);
+        digitalWrite(PIN_MOTOR_CCW, LOW);
+        delay(1000);
+      }
+      else
+      {
+        pwmWrite(PIN_MOTOR_PWM, DUTY_MAX / 5);
+        digitalWrite(PIN_MOTOR_CW, LOW);
+        digitalWrite(PIN_MOTOR_CCW, HIGH);
+      }
+    }
+
     // if(motor_op_case == 'T') 
 
     // if (motor_op_flag == 1)
@@ -472,13 +493,14 @@ uint8_t MotorLoadcellZeroSet(float cforce)
       digitalWrite(PIN_MOTOR_CW, LOW);
       digitalWrite(PIN_MOTOR_CCW, LOW);
       pwmWrite(PIN_MOTOR_PWM, DUTY_MIN);
+      Serial.println(avg_loadcell);
       break;
     }
     else
     {
       digitalWrite(PIN_MOTOR_CW, HIGH);
       digitalWrite(PIN_MOTOR_CCW, LOW);
-      pwmWrite(PIN_MOTOR_PWM, DUTY_MAX / 5);
+      pwmWrite(PIN_MOTOR_PWM, DUTY_MAX / 10);
     }
   }
 
@@ -783,20 +805,20 @@ void SerialCommunicationNode(void *pvParameters)
       {
         motor_op_case = 'H';
       }
-      else if (str_command == 'z')
-      {
-        motor_op_case = 'Z';
-        
-      }
       else if (str_command == 'l')
       {
+        motor_op_case = 'L';
         
+      }
+      else if (str_command == 'o')
+      {
+        motor_op_case = 'O';
       }
       else if (str_command == 't')
       {
         motor_op_case = 'T';
       }
-
+      
 
 
 
