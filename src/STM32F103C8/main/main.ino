@@ -52,16 +52,19 @@
 #define ACTIVE_LOADCELL                 1       // 1-ON, 0-OFF
 #define ACTIVE_MOTOR                    1       // 1-ON, 0-OFF
 #define ACTIVE_DATA_MONITORING          1       // 1-ON, 0-OFF
-#define ACTIVE_RTOS_THREAD              1
+#define ACTIVE_SERIAL_READING           1       // 1-ON, 0-OFF
+#define ACTIVE_SERIAL_WRITING           1       // 1-ON, 0-OFF
+#define ACTIVE_RTOS_THREAD              1       // 1-ON, 0-OFF
 
 // ROTS Threads Frequency Setting
 #define RTOS_FREQUENCY                  100     // Hz (Default)
-#define RTOS_FREQUENCY_LOADCELLUPDATE   250     // Hz (Default)
-#define RTOS_FREQUENCY_MOTOR_OPERATION  250     // Hz (Default)
-#define RTOS_FREQUENCY_EEPROM_SAVE      100     // Hz (Default)
+#define RTOS_FREQUENCY_LOADCELLUPDATE   500     // Hz (Default)
+#define RTOS_FREQUENCY_MOTOR_OPERATION  500     // Hz (Default)
+#define RTOS_FREQUENCY_EEPROM_SAVE      250     // Hz (Default)
 #define RTOS_FREQUENCY_MONITORING       10      // Hz (Default)
-#define RTOS_FREQUENCY_SERIALREADING    500      // Hz (Default)
+#define RTOS_FREQUENCY_SERIALREADING    500     // Hz (Default)
 #define RTOS_FREQUENCY_SERIALWRITING    10      // Hz (Default)
+#define TOTAL_SYSTEM_DELAY              1       // ms
 
 /*********************************
  * Serial communication Parameters
@@ -818,19 +821,23 @@ uint8_t RTOSInit()
               NULL);
 #endif
 
+#if ACTIVE_SERIAL_WRITING
   xTaskCreate(SerialWritingNode,
               "SerialWritingNode",
               256,
               NULL,
               tskIDLE_PRIORITY + 1,
               NULL);
+#endif
 
+#if ACTIVE_SERIAL_READING
   xTaskCreate(SerialReadingNode,
               "SerialReadingNode",
               256,
               NULL,
               tskIDLE_PRIORITY + 1,
               NULL);
+#endif
 
   xTaskCreate(EEPROMSaveNode,
               "EEPROMSave",
@@ -883,13 +890,14 @@ void MotorOperatingNode(void *pvParameters)
     else if(GripperMotor.op_command == kRevolution) GripperMotor.MoveRevolution(TARGET_REVOLTION);
 
     TimeChecker.loop_time_checker_MotorOperation = temp_time;    
-    vTaskDelay((1) / portTICK_PERIOD_MS);
+    vTaskDelay(((1000/RTOS_FREQUENCY_MOTOR_OPERATION)-TOTAL_SYSTEM_DELAY) / portTICK_PERIOD_MS);
   }
 }
 
 /*********************************
  * Serial Communication Update
  **********************************/
+#if ACTIVE_SERIAL_READING
 void SerialReadingNode(void *pvParameters)
 {
   SerialCommandINFO();
@@ -933,9 +941,12 @@ void SerialReadingNode(void *pvParameters)
     else if(valid_msg == "Q")              SerialCommandINFO();
 
     Serial.print("Command Message : "); Serial.println(valid_msg);
-    vTaskDelay((1000/RTOS_FREQUENCY_SERIALREADING) / portTICK_PERIOD_MS);
+    vTaskDelay( ((1000/RTOS_FREQUENCY_SERIALREADING)) / portTICK_PERIOD_MS);
   }
 }
+#endif
+
+#if ACTIVE_SERIAL_WRITING
 void SerialWritingNode(void *pvParameters)
 {
   static unsigned long curt_time = millis();
@@ -957,13 +968,14 @@ void SerialWritingNode(void *pvParameters)
     str_send_buffer += String(GripperMotor.absolute_position);
 
     Serial.println(str_send_buffer);
-    Serial.flush();
+    // Serial.flush();
 
     str_send_buffer ="";
     TimeChecker.loop_time_checker_SerialWriting = temp_time;
-    vTaskDelay( (1000/RTOS_FREQUENCY_SERIALWRITING) / portTICK_PERIOD_MS);
+    vTaskDelay( ((1000/RTOS_FREQUENCY_SERIALWRITING)-TOTAL_SYSTEM_DELAY) / portTICK_PERIOD_MS);
   }
 }
+#endif
 
 /*********************************
  * EEPROM Update (Global encoder pos update)
@@ -973,7 +985,7 @@ void EEPROMSaveNode(void *pvParameters)
   static unsigned long curt_time = millis();
   static unsigned long prev_time = millis();
   static unsigned long temp_time = 0;
-
+  
   while (true)
   {
     curt_time = millis();
@@ -984,7 +996,7 @@ void EEPROMSaveNode(void *pvParameters)
     // long k = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
 
     TimeChecker.loop_time_checker_EEPROMUpdate = temp_time;
-    vTaskDelay((1000 / RTOS_FREQUENCY_EEPROM_SAVE) / portTICK_PERIOD_MS);
+    vTaskDelay( ((1000 / RTOS_FREQUENCY_EEPROM_SAVE)-TOTAL_SYSTEM_DELAY) / portTICK_PERIOD_MS);
   }
 }
 
@@ -1012,7 +1024,7 @@ void LoadCellUpdateNode(void *pvParameters)
 
     TimeChecker.loop_time_checker_LoadCellUpdate = temp_time;
     // vTaskDelay( (1000/RTOS_FREQUENCY_LOADCELLUPDATE - (int)temp_time) / portTICK_PERIOD_MS );
-    vTaskDelay((1000 / RTOS_FREQUENCY_LOADCELLUPDATE) / portTICK_PERIOD_MS);
+    vTaskDelay( ((1000 / RTOS_FREQUENCY_LOADCELLUPDATE)-TOTAL_SYSTEM_DELAY) / portTICK_PERIOD_MS);
   }
 }
 
