@@ -7,7 +7,7 @@
  * @author Dae-Yun Jang (bigyun9375@gmail.com)
  * @git  https://github.com/Bigyuun/gripper_ws
  * @version 0.1
- * @date 2022-08-09
+ * @date 2022-08-24
  * @copyright Copyright (c) 2022
  * @brief
  * DC motor control using encoder CODE
@@ -60,7 +60,7 @@
 #define RTOS_FREQUENCY_MOTOR_OPERATION  500     // Hz (Default)
 #define RTOS_FREQUENCY_EEPROM_SAVE      100     // Hz (Default)
 #define RTOS_FREQUENCY_MONITORING       10      // Hz (Default)
-
+#define RTOS_FREQUENCY_SERIALWRITING    10      // Hz (Default)
 ///////////////////////////////////////////////////////////////////////////////////////
 
 /*********************************
@@ -117,7 +117,7 @@
  *********************************/
 #define ENCODER_POS_EEPROM_ADDRESS 0
 #define ENCODER_RESOLUTION         7
-#define HOMING_THRESHOLD           200
+#define HOMING_THRESHOLD           150
 
 /*********************************
  * Load Cell info
@@ -164,41 +164,35 @@ static void LEDIndicator();
 
 enum MotorDirection
 {
+  kNoneDir,
   kClockwise,
   kCounterClockwise,
 };
-
 enum MotorState
 {
-  kEnable,
   kDisable,
+  kEnable,
 };
-
 enum MotorOperationMode
 {
   kVelocityMode,
   kPositionMode,
 };
-
 enum MotorCommand
 {
   kNone,
   kHoming = 1,
   kHomingLoadcell,
-  kOneResolution,
+  kOneRevolution,
 };
-
-#if ACTIVE_MOTOR
 class DCMotor
 {
 private:
-  
   static DCMotor* anchor;
-
+  
 public:
-
   MotorState motor_state = kDisable;
-  MotorDirection direction = kClockwise;
+  MotorDirection direction = kNoneDir;
   MotorOperationMode op_mode = kVelocityMode;
   MotorCommand op_command = kNone;
 
@@ -219,12 +213,13 @@ public:
   void SetDirOFF();
   void UpdateVelocity(int duty);
   void UpdatePosition(long val);
+  void SetActualPosZero();
+  void SetAbsolutePosZero();
   void PWMInit();
   uint8_t Homing(uint16_t threshold);
   uint8_t HomingLoadCell(float target_force);
-  uint8_t MoveOneResolution();
+  uint8_t MoveOneRevolution();
 };
-#endif
 
 /*********************************
  * Global variables
@@ -253,7 +248,6 @@ volatile float f3[3]; //[x3,y3,z3]
 volatile float fx;
 volatile float fy;
 volatile float fz;
-
 #endif
 
 #if ACTIVE_DATA_MONITORING
@@ -261,6 +255,10 @@ volatile float fz;
 static float loop_time_checker[NUMBER_OF_RTOS_THREADS] = {0};
 static bool allparameters_monitoring_flag = false;
 #endif
+
+// Serial communication buffers.
+String str_recv_buffer;
+String str_send_buffer;
 ///////////////////////////////////////////////////////////////////////////////////////
 
 //==================================================================================================
@@ -364,7 +362,6 @@ void EncoderInit()
   Serial.print(" / target Pos : ");
   Serial.println(TARGET_POS);
 }
-
 
 //==================================================================================================
 /**
@@ -549,7 +546,7 @@ void MonitorAllParametersNode(void *pvParameters)
       }
       Serial.print("   ");
       Serial.print(GripperMotor.absolute_position);
-      Serial.print("   ");
+      Serial.print("           ");
       Serial.print(GripperMotor.actual_position);
       Serial.print("\n");
       Serial.println("----------------- <Loop Time> -----------------------");
@@ -570,61 +567,98 @@ void MonitorAllParametersNode(void *pvParameters)
 /*********************************
  * Serial Communication Update
  **********************************/
-void SerialCommunicationReadingNode(void *pvParameters)
+void SerialReadingNode(void *pvParameters)
 {
-  Serial.println("================================ Command Info ======================================");
-  Serial.println("c : clockwise   / d : counter clockwise / z : enc_pos = 0 / m : monitoring parameters");
-  Serial.println("r : run 1 cycle / s : stop motor                          / n : Not monitoring parameters");
-  Serial.println("====================================================================================");
+  SerialCommandINFO();
 
   while (true)
   {
-    if (Serial.available())
-    {
-      char str_command = Serial.read();
-      // String str_command = Serial.readString();
-      Serial.println(str_command);
+    if(Serial.available() <= 0) continue;
 
-      if (str_command == 'c')
-      {
-        GripperMotor.SetDirCW();
-      }
-      else if (str_command == 'd')
-      {
-        GripperMotor.SetDirCCW();
-      }
-      else if (str_command == 'z')  GripperMotor.actual_position = 0;
-      else if (str_command == 'r')
-      {
-        GripperMotor.Enable();
-        GripperMotor.UpdateVelocity(DUTY_MAX/5);
-      }
-      else if (str_command == 's')
-      {
-        GripperMotor.Disable();
-      }
-      else if (str_command == 'h')  GripperMotor.op_command = kHoming;
-      else if (str_command == 'l')  GripperMotor.op_command = kHomingLoadcell;
+    // received messages update
+    str_recv_buffer += Serial.readString();
+    // find '/'
+    int ipos0 = str_recv_buffer.indexOf('/');
+    if(ipos0 <0) continue;
+    // find ';'
+    int ipos1 = str_recv_buffer.indexOf(';');
+    if(ipos1 <0) continue;
+    // get valid message & recv_buffer clear
+    String valid_msg = str_recv_buffer.substring(ipos0+1, ipos1);
+    str_recv_buffer = "";
 
-      else if (str_command == 'm')  allparameters_monitoring_flag = true;
-      else if (str_command == 'n')  allparameters_monitoring_flag = false;
-    }
+    if     (valid_msg == "CW")             GripperMotor.SetDirCW();
+    else if(valid_msg == "CCW")            GripperMotor.SetDirCCW();
+    else if(valid_msg == "SETACTZERO")     GripperMotor.actual_position = 0;
+    else if(valid_msg == "Z")              GripperMotor.actual_position = 0;
+    else if(valid_msg == "SETABSZERO")     GripperMotor.absolute_position = 0;
+    else if(valid_msg == "ZB")             GripperMotor.absolute_position = 0;
+    else if(valid_msg == "RUN")           {GripperMotor.motor_state = kEnable; GripperMotor.UpdateVelocity(DUTY_MAX/10);}
+    else if(valid_msg == "R")             {GripperMotor.motor_state = kEnable; GripperMotor.UpdateVelocity(DUTY_MAX/10);}
+    else if(valid_msg == "STOP")           GripperMotor.Disable();
+    else if(valid_msg == "S")              GripperMotor.Disable();
+    else if(valid_msg == "HOMING")         GripperMotor.op_command = kHoming;
+    else if(valid_msg == "H")              GripperMotor.op_command = kHoming;
+    else if(valid_msg == "LOADCELLHOMING") GripperMotor.op_command = kHomingLoadcell;
+    else if(valid_msg == "LH")             GripperMotor.op_command = kHomingLoadcell;
+    else if(valid_msg == "ONERESOLUTION")  GripperMotor.op_command = kOneRevolution;
+    else if(valid_msg == "O")              GripperMotor.op_command = kOneRevolution;
+    else if(valid_msg == "MONITOR")        allparameters_monitoring_flag = true;
+    else if(valid_msg == "M")              allparameters_monitoring_flag = true;
+    else if(valid_msg == "NONMONITOR")     allparameters_monitoring_flag = false;
+    else if(valid_msg == "N")              allparameters_monitoring_flag = false;
+    else if(valid_msg == "Q")              SerialCommandINFO();
 
-    // vTaskDelay/((10) / portTICK_PERIOD_MS);
+    Serial.print("Command Message : "); Serial.println(valid_msg);
+    vTaskDelay((1) / portTICK_PERIOD_MS);
   }
 }
 
-void SerialCommunicationWritingNode(void *pvParameters)
+void SerialWritingNode(void *pvParameters)
 {
-  // for echo system
+  while(true)
+  {
+    str_send_buffer += String(GripperMotor.motor_state) + ",";
+    str_send_buffer += String(GripperMotor.op_command) +",";
+    for(int i=0; i<NUMBER_OF_LOADCELL_MODULE; i++)
+    {
+      str_send_buffer += String(g_loadcell_val[i]) + ",";
+    }
+    str_send_buffer += String(GripperMotor.absolute_position);
+
+    Serial.println(str_send_buffer);
+    Serial.flush();
+
+    str_send_buffer ="";
+    vTaskDelay( (1000/RTOS_FREQUENCY_SERIALWRITING) / portTICK_PERIOD_MS);
+  }
 }
+
+void SerialCommandINFO()
+{
+  Serial.println("================================ Command Info ======================================");
+  Serial.println("[Protocol] : '/' + 'command_message' + ';' ( Example -> /CW; )");
+  Serial.println("CW                  : clockwise");
+  Serial.println("CCW                 : counter clockwise");
+  Serial.println("SETACTZERO     (Z)  : Set Encoder Actual Pos 0 (actual pos only, not absolute pos)");
+  Serial.println("SETABSZERO     (ZB) : Set Encoder Absolute Pos 0 (absolute pos only, not actual pos)");
+  Serial.println("RUN            (R)  : Move motor depend on user setup direction & speed");
+  Serial.println("STOP           (S)  : Stop motor");
+  Serial.println("HOMING         (H)  : Motor Homing operation (Move until the absolute pos will be 0)");
+  Serial.println("LOADCELLHOMING (LH) : Load cell Homing operation (Move until the average of all loadcell value will be user set (default : 150)");
+  Serial.println("MONITOR        (M)  : Monitoring values & loop time of each threads");
+  Serial.println("NONMONITOR     (N)  : Stop Monitoring");
+  Serial.println("Q                   : Show Command Info");
+  Serial.println("====================================================================================");
+}
+
 
 /*********************************
  * Indicator for operating successfully
  **********************************/
 static void LEDIndicator(void *pvParameters)
 {
-  for (;;)
+  while(true)
   {
     vTaskDelay(500);
     digitalWrite(PIN_BOARD_LED, HIGH);
@@ -632,7 +666,6 @@ static void LEDIndicator(void *pvParameters)
     digitalWrite(PIN_BOARD_LED, LOW);
   }
 }
-
 //==================================================================================================
 /**
  * @note Operation of RTOS Threads
@@ -671,15 +704,24 @@ uint8_t RTOSInit()
               NULL);
 #endif
 
-  // xTaskCreate(SerialCommunicationWritingNode,
-  //             "SerialCommunicationWritingNode",
-  //             256,
-  //             NULL,
-  //             tskIDLE_PRIORITY + 1,
-  //             NULL);
+#if ACTIVE_MOTOR
+  xTaskCreate(MotorOperatingNode,
+              "MotorOperationMode",
+              256,
+              NULL,
+              tskIDLE_PRIORITY + 1,
+              NULL);
+#endif
 
-  xTaskCreate(SerialCommunicationReadingNode,
-              "SerialCommunicationReadingNode",
+  xTaskCreate(SerialWritingNode,
+              "SerialWritingNode",
+              256,
+              NULL,
+              tskIDLE_PRIORITY + 1,
+              NULL);
+
+  xTaskCreate(SerialReadingNode,
+              "SerialReadingNode",
               256,
               NULL,
               tskIDLE_PRIORITY + 1,
@@ -698,6 +740,7 @@ uint8_t RTOSInit()
               NULL,
               tskIDLE_PRIORITY + 1,
               NULL);
+
   Serial.println("Done");
 
   // if vTaskStartScheduler doen't work, under line will be operated.
@@ -719,8 +762,9 @@ uint8_t RTOSInit()
 void setup()
 {
   // put your setup code here, to run once:
-  delay(2000);
+  delay(3000);
   Serial.begin(115200);
+  Serial.setTimeout(1);
   Serial.println("Initializing...");
   // Serial3.begin(115200);
   // Serial3.print("asdfasdfasdfasdfasdfasdfasdf");
@@ -802,6 +846,7 @@ void DCMotor::Disable()
 {
   this->motor_state = kDisable;
   this->op_command = kNone;
+  this->direction = kNoneDir;
   digitalWrite(PIN_MOTOR_CW, LOW);
   digitalWrite(PIN_MOTOR_CCW, LOW);
   pwmWrite(PIN_MOTOR_PWM, DUTY_MIN);
@@ -820,6 +865,7 @@ void DCMotor::SetDirCCW()
 }
 void DCMotor::SetDirOFF()
 {
+  this->direction = kNoneDir;
   digitalWrite(PIN_MOTOR_CW, LOW);
   digitalWrite(PIN_MOTOR_CCW, LOW);
 }
@@ -847,11 +893,14 @@ void DCMotor::UpdatePosition(long val)
 {
   this->target_position = val;
 }
-
-
-
-
-
+void DCMotor::SetActualPosZero()
+{
+  this->actual_position = 0;
+}
+void DCMotor::SetAbsolutePosZero()
+{
+  this->absolute_position = 0;
+}
 /*********************************
  * PWM setting (Timer Register)
  **********************************/
@@ -875,7 +924,6 @@ void DCMotor::PWMInit()
   pwmtimer2.refresh();
   pwmtimer2.resume();
 
-  delay(100);
   Serial.println("DONE");
 }
 
@@ -907,14 +955,24 @@ uint8_t DCMotor::Homing(uint16_t threshold)
 
   while (true)
   {
-    if (this->actual_position <= threshold && this->actual_position >= -threshold)
+    if(this->motor_state == kEnable)
+    {
+      if ( (this->absolute_position <= threshold) && (this->absolute_position >= -threshold) )
+      {
+        Serial.print("Finished  -> abs_pos=");
+        Serial.println(this->absolute_position);
+        return 1;
+      }
+    }
+    else
     {
       this->Disable();
-      Serial.println("Finished");
-      break;
+      return 0;
     }
+
+    // Never delete -> if you delete this delay, then the operation will be make problem
+    vTaskDelay((1) / portTICK_PERIOD_MS);
   }
-  return 1;
 }
 
 /*********************************
@@ -923,8 +981,9 @@ uint8_t DCMotor::Homing(uint16_t threshold)
 uint8_t DCMotor::HomingLoadCell(float target_force)
 {
   Serial.print("Homing Load Cell...");
+  this->Enable();
 
-  while (true)
+  while (this->motor_state == kEnable)
   {
     float avg_loadcell_val = 0;
     for (int i = 0; i < NUMBER_OF_LOADCELL_MODULE; i++)
@@ -941,7 +1000,7 @@ uint8_t DCMotor::HomingLoadCell(float target_force)
       this->Disable();
       Serial.print("Finished -> avg_val : ");
       Serial.println(avg_loadcell_val);
-      break;
+      return 1;
     }
     else
     {
@@ -949,24 +1008,35 @@ uint8_t DCMotor::HomingLoadCell(float target_force)
       this->UpdateVelocity(DUTY_MAX / 10);
       this->Enable();
     }
+
+    // Never delete -> if you delete this delay, then the operation will be make problem
+    vTaskDelay((1) / portTICK_PERIOD_MS);
   }
-  return 1;
+
+  Serial.println("Loadcell homing error");
+  return 0;
 }
 
-uint8_t DCMotor::MoveOneResolution()
+/*********************************
+ * Set zero based on Load Cell
+ **********************************/
+uint8_t DCMotor::MoveOneRevolution()
 {
-  if (this->direction = kClockwise)
+  Serial.print("one revolution...");
+  if (this->direction == kClockwise)
   {
     this->UpdatePosition(this->actual_position + ONE_RESOLUTION);
     this->SetDirCW();
+    this->Enable();
   }
-  else if (this->direction = kCounterClockwise)
+  else if (this->direction == kCounterClockwise)
   {
     this->UpdatePosition(this->actual_position - ONE_RESOLUTION);
     this->SetDirCCW();
+    this->Enable();
   }
 
-  while (true)
+  while (this->motor_state == kEnable)
   {
     if (this->direction == kClockwise)
     {
@@ -978,7 +1048,8 @@ uint8_t DCMotor::MoveOneResolution()
       else
       {
         this->Disable();
-        break;
+        Serial.println("Done");
+        return 1;
       }
     }
 
@@ -992,8 +1063,24 @@ uint8_t DCMotor::MoveOneResolution()
       else
       {
         this->Disable();
-        break;
+        Serial.println("Done");
+        return 1;
       }
     }
+  }
+
+  Serial.println("One Revolution error");
+  return 0;
+}
+
+void MotorOperatingNode(void *pvParameters)
+{
+  while(true)
+  {
+    if     (GripperMotor.op_command == kHoming)  GripperMotor.Homing(HOMING_THRESHOLD);
+    else if(GripperMotor.op_command == kHomingLoadcell) GripperMotor.HomingLoadCell(LOADCELL_HOMING_VALUE);
+    else if(GripperMotor.op_command == kOneRevolution) GripperMotor.MoveOneRevolution();
+    // Serial.print("MODE : "); Serial.println(GripperMotor.op_command);
+    vTaskDelay((1) / portTICK_PERIOD_MS);
   }
 }
