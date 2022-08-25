@@ -1,5 +1,4 @@
 
-
 /******************************************************************************************
  * Project : gripper_ws :: main
  *
@@ -7,7 +6,7 @@
  * @author Dae-Yun Jang (bigyun9375@gmail.com)
  * @git  https://github.com/Bigyuun/gripper_ws
  * @version 0.1
- * @date 2022-08-24
+ * @date 2022-08-25
  * @copyright Copyright (c) 2022
  * @brief
  * DC motor control using encoder CODE
@@ -36,9 +35,10 @@
   This will make your code portable to all AVR processors.
 ***/
 #include <EEPROM.h>
-#include <MapleFreeRTOS821.h>
-#include <HX711_ADC.h>
-#include <HardwareTimer.h>
+#include <MapleFreeRTOS821.h>     // For Using RTOS Thread
+#include <HX711_ADC.h>            // For Initializing Load Cell
+#include <HardwareTimer.h>        // For Setup PWM Timer
+
 
 /*********************************
  * Process Setting
@@ -46,7 +46,7 @@
 // Hardware setting
 #define NUMBER_OF_LOADCELL_MODULE       3
 #define NUMBER_OF_MOTOR_DRIVER          1
-#define NUMBER_OF_RTOS_THREADS          4
+#define NUMBER_OF_RTOS_THREADS          5
 
 // Utility On & OFF setting
 #define ACTIVE_LOADCELL                 1       // 1-ON, 0-OFF
@@ -60,8 +60,8 @@
 #define RTOS_FREQUENCY_MOTOR_OPERATION  500     // Hz (Default)
 #define RTOS_FREQUENCY_EEPROM_SAVE      100     // Hz (Default)
 #define RTOS_FREQUENCY_MONITORING       10      // Hz (Default)
+#define RTOS_FREQUENCY_SERIALREADING    1000      // Hz (Default)
 #define RTOS_FREQUENCY_SERIALWRITING    10      // Hz (Default)
-///////////////////////////////////////////////////////////////////////////////////////
 
 /*********************************
  * Serial communication Parameters
@@ -109,8 +109,8 @@
 /*********************************
  * Motor info
  *********************************/
-#define GEAR_RATIO              298
-#define GRIPPER_GEAR_RATIO      3.814814814
+#define GEAR_RATIO                 298
+#define GRIPPER_GEAR_RATIO         3.814814814
 
 /*********************************
  * Encoder info
@@ -134,15 +134,13 @@
 /*********************************
  * Setting info
  *********************************/
-#define TARGET_RESOLTION          1
-#define TARGET_POS                (GEAR_RATIO * ENCODER_RESOLUTION * 4 * GRIPPER_GEAR_RATIO * TARGET_RESOLTION)
-
-#define ONE_RESOLUTION            (GEAR_RATIO * ENCODER_RESOLUTION * 4 * GRIPPER_GEAR_RATIO)
+#define TARGET_REVOLTION          1
+#define TARGET_POS                (GEAR_RATIO * ENCODER_RESOLUTION * 4 * GRIPPER_GEAR_RATIO * TARGET_REVOLTION)
+#define ONE_REVOLUTION            (GEAR_RATIO * ENCODER_RESOLUTION * 4 * GRIPPER_GEAR_RATIO)
 
 /*********************************
  * Manual functions
  *********************************/
-
 uint8_t LoadCellInit();
 uint8_t RTOSInit();
 
@@ -160,7 +158,16 @@ void MonitorAllParametersNode();
 void SerialCommunicationNode();
 static void LEDIndicator();
 
-///////////////////////////////////////////////////////////////////////////////////////
+
+
+struct LoopTimeChecker
+{
+  float loop_time_checker_LoadCellUpdate = -1;
+  float loop_time_checker_MotorOperation = -1;
+  float loop_time_checker_EEPROMUpdate   = -1;
+  float loop_time_checker_SerialWriting  = -1;
+  float loop_time_checker_SerialReading  = -1;
+};
 
 enum MotorDirection
 {
@@ -183,7 +190,7 @@ enum MotorCommand
   kNone,
   kHoming = 1,
   kHomingLoadcell,
-  kOneRevolution,
+  kRevolution,
 };
 class DCMotor
 {
@@ -212,22 +219,24 @@ public:
   void SetDirCCW();
   void SetDirOFF();
   void UpdateVelocity(int duty);
-  void UpdatePosition(long val);
+  void UpdateTargetPosition(long val);
   void SetActualPosZero();
   void SetAbsolutePosZero();
   void PWMInit();
   uint8_t Homing(uint16_t threshold);
   uint8_t HomingLoadCell(float target_force);
-  uint8_t MoveOneRevolution();
+  uint8_t MoveRevolution(long target_rev);
 };
 
-/*********************************
- * Global variables
- *********************************/
+
+/************************************************************************************************************
+ * ///////////////////////////////////////////////////////////////////////////////////////////////////////////
+ *                                          Global variables
+ * \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+ ************************************************************************************************************/
 #if ACTIVE_MOTOR
 DCMotor GripperMotor;
 #endif
-
 
 #if ACTIVE_LOADCELL
 // HX711_ADC LoadCell[NUMBER_OF_LOADCELL_MODULE];
@@ -252,587 +261,22 @@ volatile float fz;
 
 #if ACTIVE_DATA_MONITORING
 // monitoring val
-static float loop_time_checker[NUMBER_OF_RTOS_THREADS] = {0};
 static bool allparameters_monitoring_flag = false;
+LoopTimeChecker TimeChecker;
 #endif
 
 // Serial communication buffers.
 String str_recv_buffer;
 String str_send_buffer;
-///////////////////////////////////////////////////////////////////////////////////////
+
+
+
 
 //==================================================================================================
 /**
- * @note Motor Initialize & operate Functions
- *        - END               */
+ * @note [CLASS] Motor Initialize & operate Functions 
+ *        - START              */
 //==================================================================================================
-
-/*********************************
- * Encoder Interrupt Phase A
- **********************************/
-void isr_encoder_phase_A()
-{
-  if (digitalRead(PIN_ENCODER_PHASE_A) == HIGH)
-  {
-    // check channel B to see which way encoder is turning
-    if (digitalRead(PIN_ENCODER_PAHSE_B) == LOW)
-    {
-      GripperMotor.absolute_position += 1;
-      GripperMotor.actual_position += 1;
-    }
-    else
-    {
-      GripperMotor.absolute_position -= 1;
-      GripperMotor.actual_position -= 1;
-    }
-  }
-  else // must be a high-to-low edge on channel A
-  {
-    // check channel B to see which way encoder is turning
-    if (digitalRead(PIN_ENCODER_PAHSE_B) == HIGH)
-    {
-      GripperMotor.absolute_position += 1;
-      GripperMotor.actual_position += 1;
-    }
-    else
-    {
-      GripperMotor.absolute_position -= 1;
-      GripperMotor.actual_position -= 1;
-    }
-  }
-}
-
-/*********************************
- * Encoder Interrupt Phase B
- **********************************/
-void isr_encoder_phase_B()
-{
-  // look for a low-to-high on channel B
-  if (digitalRead(PIN_ENCODER_PAHSE_B) == HIGH)
-  {
-    // check channel A to see which way encoder is turning
-    if (digitalRead(PIN_ENCODER_PHASE_A) == HIGH)
-    {
-      GripperMotor.absolute_position += 1;
-      GripperMotor.actual_position += 1;
-    }
-    else
-    {
-      GripperMotor.absolute_position -= 1;
-      GripperMotor.actual_position -= 1;
-    }
-  }
-  // Look for a high-to-low on channel B
-  else
-  {
-    // check channel B to see which way encoder is turning
-    if (digitalRead(PIN_ENCODER_PHASE_A) == LOW)
-    {
-      GripperMotor.absolute_position += 1;
-      GripperMotor.actual_position += 1;
-    }
-    else
-    {
-      GripperMotor.absolute_position -= 1;
-      GripperMotor.actual_position -= 1;
-    }
-  }
-}
-
-/*********************************
- * Encoder Interrupt & init pos
- **********************************/
-void EncoderInit()
-{
-  Serial.print("Encoder interrupter Initializing...");
-  pinMode(PIN_ENCODER_PHASE_A, INPUT);
-  pinMode(PIN_ENCODER_PAHSE_B, INPUT);
-  attachInterrupt(digitalPinToInterrupt(PIN_ENCODER_PHASE_A), isr_encoder_phase_A, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(PIN_ENCODER_PAHSE_B), isr_encoder_phase_B, CHANGE);
-
-  GripperMotor.absolute_position = 0;
-  GripperMotor.absolute_position = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
-  // GripperMotor.actual_position = 0;
-  // GripperMotor.actual_position = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
-
-  delay(100);
-  Serial.print("DONE");
-  Serial.print(" --> EEPROM_pos : ");
-  Serial.print(GripperMotor.absolute_position);
-  Serial.print(" / target Pos : ");
-  Serial.println(TARGET_POS);
-}
-
-//==================================================================================================
-/**
- * @note Load Cell Initialize & operate Functions
- *        - START               */
-//==================================================================================================
-#if ACTIVE_LOADCELL
-uint8_t LoadCellInit()
-{
-  Serial.print("Load Cell Inititializing...");
-
-  LoadCell_1.begin();
-  LoadCell_2.begin();
-  LoadCell_3.begin();
-
-  unsigned long stabilizingtime = 2000; // tare preciscion can be improved by adding a few seconds of stabilizing time
-  boolean _tare = true;                 // set this to false if you don't want tare to be performed in the next step
-  byte loadcell_1_rdy = 0;
-  byte loadcell_2_rdy = 0;
-  byte loadcell_3_rdy = 0;
-
-  while ((loadcell_1_rdy + loadcell_2_rdy) < 2)
-  { // run startup, stabilization and tare, both modules simultaniously
-    if (!loadcell_1_rdy)
-      loadcell_1_rdy = LoadCell_1.startMultiple(stabilizingtime, _tare);
-    if (!loadcell_2_rdy)
-      loadcell_2_rdy = LoadCell_2.startMultiple(stabilizingtime, _tare);
-    if (!loadcell_3_rdy)
-      loadcell_3_rdy = LoadCell_3.startMultiple(stabilizingtime, _tare);
-  }
-
-  if (LoadCell_1.getTareTimeoutFlag())
-  {
-    Serial.print("\n");
-    Serial.println("Timeout, check MCU>HX711 no.1 wiring and pin designations");
-  }
-
-  if (LoadCell_2.getTareTimeoutFlag())
-  {
-    Serial.print("\n");
-    Serial.println("Timeout, check MCU>HX711 no.2 wiring and pin designations");
-  }
-
-  if (LoadCell_3.getTareTimeoutFlag())
-  {
-    Serial.print("\n");
-    Serial.println("Timeout, check MCU>HX711 no.3 wiring and pin designations");
-  }
-
-  LoadCell_1.setCalFactor(CALIBRATION_VALUE_1); // user set calibration value (float)
-  LoadCell_2.setCalFactor(CALIBRATION_VALUE_2); // user set calibration value (float)
-  LoadCell_3.setCalFactor(CALIBRATION_VALUE_3); // user set calibration value (float)
-
-  delay(100);
-  Serial.println("Done");
-  return 1;
-}
-
-/*********************************
- * Load Cell data Update
- **********************************/
-void LoadCellUpdateNode(void *pvParameters)
-{
-  static unsigned long curt_time = millis();
-  static unsigned long prev_time = millis();
-  static unsigned long temp_time = 0;
-
-  while (true)
-  {
-    curt_time = millis();
-    temp_time = curt_time - prev_time;
-    prev_time = curt_time;
-
-    LoadCell_1.update();
-    LoadCell_2.update();
-    LoadCell_3.update();
-    g_loadcell_val[0] = LoadCell_1.getData();
-    g_loadcell_val[1] = LoadCell_2.getData();
-    g_loadcell_val[2] = LoadCell_3.getData();
-
-    loop_time_checker[0] = temp_time;
-    // vTaskDelay( (1000/RTOS_FREQUENCY_LOADCELLUPDATE - (int)temp_time) / portTICK_PERIOD_MS );
-    vTaskDelay((1000 / RTOS_FREQUENCY_LOADCELLUPDATE) / portTICK_PERIOD_MS);
-  }
-}
-#endif
-//==================================================================================================
-/**
- * @note Load Cell Initialize & operate Functions
- *        - END               */
-//==================================================================================================
-
-//==================================================================================================
-/**
- * @note EEPROM write(save) & read functions
- *         - START             */
-//==================================================================================================
-
-/*********************************
- * EEPROM read
- **********************************/
-long EEPROMReadlong(int address)
-{
-  long four = EEPROM.read(address);
-  long three = EEPROM.read(address + 1);
-  long two = EEPROM.read(address + 2);
-  long one = EEPROM.read(address + 3);
-
-  return ((four << 0) & 0xFF) + ((three << 8) & 0xFFFF) + ((two << 16) & 0xFFFFFF) + ((one << 24) & 0xFFFFFFFF);
-}
-
-/*********************************
- * EEPROM write
- **********************************/
-void EEPROMWritelong(int address, long value)
-{
-  byte four = (value & 0xFF);
-  byte three = ((value >> 8) & 0xFF);
-  byte two = ((value >> 16) & 0xFF);
-  byte one = ((value >> 24) & 0xFF);
-
-  EEPROM.write(address, four);
-  EEPROM.write(address + 1, three);
-  EEPROM.write(address + 2, two);
-  EEPROM.write(address + 3, one);
-}
-
-/*********************************
- * EEPROM Update (g_enc_pos update)
- **********************************/
-void EEPROMSaveNode(void *pvParameters)
-{
-  static unsigned long curt_time = millis();
-  static unsigned long prev_time = millis();
-  static unsigned long temp_time = 0;
-
-  while (true)
-  {
-    curt_time = millis();
-    temp_time = curt_time - prev_time;
-    prev_time = curt_time;
-
-    EEPROMWritelong(ENCODER_POS_EEPROM_ADDRESS, GripperMotor.absolute_position);
-    // long k = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
-
-    loop_time_checker[1] = temp_time;
-    // vTaskDelay( (1000/RTOS_FREQUENCY_EEPROM_SAVE - (int)temp_time) / portTICK_PERIOD_MS ); ;
-    vTaskDelay((1000 / RTOS_FREQUENCY_EEPROM_SAVE) / portTICK_PERIOD_MS);
-    ;
-  }
-}
-//==================================================================================================
-/**
- * @note EEPROM write(save) & read functions
- *         - END             */
-//==================================================================================================
-
-/*********************************
- * Monitoring Data & loop time of each Threads
- **********************************/
-#if ACTIVE_DATA_MONITORING
-void MonitorAllParametersNode(void *pvParameters)
-{
-  static unsigned long curt_time = millis();
-  static unsigned long prev_time = millis();
-  static unsigned long temp_time = 0;
-
-  while (true)
-  {
-    // curt_time = millis();
-    // temp_time = curt_time - prev_time;
-    // prev_time = curt_time;
-    if (allparameters_monitoring_flag)
-    {
-      Serial.println("=====================================================");
-      Serial.println("-------------------- <Data> -------------------------");
-      Serial.println("LOADCELL_1    LOADCELL_2    LOADCELL_3    ENC_POS(abs)    ENC_POS(acual)");
-      for (int i = 0; i < NUMBER_OF_LOADCELL_MODULE; i++)
-      {
-        Serial.print(g_loadcell_val[i], 4);
-        Serial.print("        ");
-      }
-      Serial.print("   ");
-      Serial.print(GripperMotor.absolute_position);
-      Serial.print("           ");
-      Serial.print(GripperMotor.actual_position);
-      Serial.print("\n");
-      Serial.println("----------------- <Loop Time> -----------------------");
-      Serial.println("Thread 1      Thread 2      Thread 3      Thread 4");
-      for (int i = 0; i < NUMBER_OF_RTOS_THREADS; i++)
-      {
-        Serial.print(loop_time_checker[i], 0);
-        Serial.print(" ms          ");
-      }
-      Serial.print("\n");
-    }
-
-    vTaskDelay((1000 / RTOS_FREQUENCY_MONITORING) / portTICK_PERIOD_MS);
-  }
-}
-#endif
-
-/*********************************
- * Serial Communication Update
- **********************************/
-void SerialReadingNode(void *pvParameters)
-{
-  SerialCommandINFO();
-
-  while (true)
-  {
-    if(Serial.available() <= 0) continue;
-
-    // received messages update
-    str_recv_buffer += Serial.readString();
-    // find '/'
-    int ipos0 = str_recv_buffer.indexOf('/');
-    if(ipos0 <0) continue;
-    // find ';'
-    int ipos1 = str_recv_buffer.indexOf(';');
-    if(ipos1 <0) continue;
-    // get valid message & recv_buffer clear
-    String valid_msg = str_recv_buffer.substring(ipos0+1, ipos1);
-    str_recv_buffer = "";
-
-    if     (valid_msg == "CW")             GripperMotor.SetDirCW();
-    else if(valid_msg == "CCW")            GripperMotor.SetDirCCW();
-    else if(valid_msg == "SETACTZERO")     GripperMotor.actual_position = 0;
-    else if(valid_msg == "Z")              GripperMotor.actual_position = 0;
-    else if(valid_msg == "SETABSZERO")     GripperMotor.absolute_position = 0;
-    else if(valid_msg == "ZB")             GripperMotor.absolute_position = 0;
-    else if(valid_msg == "RUN")           {GripperMotor.motor_state = kEnable; GripperMotor.UpdateVelocity(DUTY_MAX/10);}
-    else if(valid_msg == "R")             {GripperMotor.motor_state = kEnable; GripperMotor.UpdateVelocity(DUTY_MAX/10);}
-    else if(valid_msg == "STOP")           GripperMotor.Disable();
-    else if(valid_msg == "S")              GripperMotor.Disable();
-    else if(valid_msg == "HOMING")         GripperMotor.op_command = kHoming;
-    else if(valid_msg == "H")              GripperMotor.op_command = kHoming;
-    else if(valid_msg == "LOADCELLHOMING") GripperMotor.op_command = kHomingLoadcell;
-    else if(valid_msg == "LH")             GripperMotor.op_command = kHomingLoadcell;
-    else if(valid_msg == "ONERESOLUTION")  GripperMotor.op_command = kOneRevolution;
-    else if(valid_msg == "O")              GripperMotor.op_command = kOneRevolution;
-    else if(valid_msg == "MONITOR")        allparameters_monitoring_flag = true;
-    else if(valid_msg == "M")              allparameters_monitoring_flag = true;
-    else if(valid_msg == "NONMONITOR")     allparameters_monitoring_flag = false;
-    else if(valid_msg == "N")              allparameters_monitoring_flag = false;
-    else if(valid_msg == "Q")              SerialCommandINFO();
-
-    Serial.print("Command Message : "); Serial.println(valid_msg);
-    vTaskDelay((1) / portTICK_PERIOD_MS);
-  }
-}
-
-void SerialWritingNode(void *pvParameters)
-{
-  while(true)
-  {
-    str_send_buffer += String(GripperMotor.motor_state) + ",";
-    str_send_buffer += String(GripperMotor.op_command) +",";
-    for(int i=0; i<NUMBER_OF_LOADCELL_MODULE; i++)
-    {
-      str_send_buffer += String(g_loadcell_val[i]) + ",";
-    }
-    str_send_buffer += String(GripperMotor.absolute_position);
-
-    Serial.println(str_send_buffer);
-    Serial.flush();
-
-    str_send_buffer ="";
-    vTaskDelay( (1000/RTOS_FREQUENCY_SERIALWRITING) / portTICK_PERIOD_MS);
-  }
-}
-
-void SerialCommandINFO()
-{
-  Serial.println("================================ Command Info ======================================");
-  Serial.println("[Protocol] : '/' + 'command_message' + ';' ( Example -> /CW; )");
-  Serial.println("CW                  : clockwise");
-  Serial.println("CCW                 : counter clockwise");
-  Serial.println("SETACTZERO     (Z)  : Set Encoder Actual Pos 0 (actual pos only, not absolute pos)");
-  Serial.println("SETABSZERO     (ZB) : Set Encoder Absolute Pos 0 (absolute pos only, not actual pos)");
-  Serial.println("RUN            (R)  : Move motor depend on user setup direction & speed");
-  Serial.println("STOP           (S)  : Stop motor");
-  Serial.println("HOMING         (H)  : Motor Homing operation (Move until the absolute pos will be 0)");
-  Serial.println("LOADCELLHOMING (LH) : Load cell Homing operation (Move until the average of all loadcell value will be user set (default : 150)");
-  Serial.println("MONITOR        (M)  : Monitoring values & loop time of each threads");
-  Serial.println("NONMONITOR     (N)  : Stop Monitoring");
-  Serial.println("Q                   : Show Command Info");
-  Serial.println("====================================================================================");
-}
-
-
-/*********************************
- * Indicator for operating successfully
- **********************************/
-static void LEDIndicator(void *pvParameters)
-{
-  while(true)
-  {
-    vTaskDelay(500);
-    digitalWrite(PIN_BOARD_LED, HIGH);
-    vTaskDelay(500);
-    digitalWrite(PIN_BOARD_LED, LOW);
-  }
-}
-//==================================================================================================
-/**
- * @note Operation of RTOS Threads
- *         - END             */
-//==================================================================================================
-
-//==================================================================================================
-/**
- * @note RTOS Threads Initialize Functions
- *        - START               */
-//==================================================================================================
-
-/*********************************
- * RTOS Thread Initializing
- **********************************/
-#if ACTIVE_RTOS_THREAD
-uint8_t RTOSInit()
-{
-  Serial.print("RTOS Thread Creating...");
-
-#if ACTIVE_LOADCELL
-  xTaskCreate(LoadCellUpdateNode,
-              "LoadCellUpdate",
-              384,
-              NULL,
-              tskIDLE_PRIORITY + 1,
-              NULL);
-#endif
-
-#if ACTIVE_DATA_MONITORING
-  xTaskCreate(MonitorAllParametersNode,
-              "MonitorAllParameters",
-              128,
-              NULL,
-              tskIDLE_PRIORITY + 1,
-              NULL);
-#endif
-
-#if ACTIVE_MOTOR
-  xTaskCreate(MotorOperatingNode,
-              "MotorOperationMode",
-              256,
-              NULL,
-              tskIDLE_PRIORITY + 1,
-              NULL);
-#endif
-
-  xTaskCreate(SerialWritingNode,
-              "SerialWritingNode",
-              256,
-              NULL,
-              tskIDLE_PRIORITY + 1,
-              NULL);
-
-  xTaskCreate(SerialReadingNode,
-              "SerialReadingNode",
-              256,
-              NULL,
-              tskIDLE_PRIORITY + 1,
-              NULL);
-
-  xTaskCreate(EEPROMSaveNode,
-              "EEPROMSave",
-              128,
-              NULL,
-              tskIDLE_PRIORITY + 1,
-              NULL);
-
-  xTaskCreate(LEDIndicator,
-              "LEDIndicator_Debug",
-              64,
-              NULL,
-              tskIDLE_PRIORITY + 1,
-              NULL);
-
-  Serial.println("Done");
-
-  // if vTaskStartScheduler doen't work, under line will be operated.
-  vTaskStartScheduler();
-  Serial.println("vTaskStartScheduler() failed!!!");
-
-  return 0;
-}
-#endif
-//==================================================================================================
-/**
- * @note RTOS Threads Initialize Functions
- *        - END               */
-//==================================================================================================
-
-//<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Setup & Loop >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-//                                 -START-
-
-void setup()
-{
-  // put your setup code here, to run once:
-  delay(3000);
-  Serial.begin(115200);
-  Serial.setTimeout(1);
-  Serial.println("Initializing...");
-  // Serial3.begin(115200);
-  // Serial3.print("asdfasdfasdfasdfasdfasdfasdf");
-  pinMode(PIN_BOARD_LED, OUTPUT);
-  for (int i = 0; i < NUMBER_OF_RTOS_THREADS; i++)
-  {
-    loop_time_checker[i] = -1;
-  }
-
-  if (ACTIVE_MOTOR)
-    GripperMotor.PWMInit();
-    EncoderInit();
-  if (ACTIVE_LOADCELL)
-    LoadCellInit();
-  if (ACTIVE_RTOS_THREAD)
-    RTOSInit();
-
-  Serial.println("All Initializing DONE.");
-  delay(2000);
-}
-
-void loop()
-{
-  /**
-   * @brief no operating source in loop()
-   * @note  RTOS Thread was operating each part
-   */
-}
-
-//<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Setup & Loop >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-//                                  -END-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/////////////////////
-
 DCMotor::DCMotor()
 {
   anchor = this;
@@ -889,7 +333,7 @@ void DCMotor::UpdateVelocity(int duty)
     pwmWrite(PIN_MOTOR_PWM, this->target_velocity);
   }
 }
-void DCMotor::UpdatePosition(long val)
+void DCMotor::UpdateTargetPosition(long val)
 {
   this->target_position = val;
 }
@@ -967,6 +411,7 @@ uint8_t DCMotor::Homing(uint16_t threshold)
     else
     {
       this->Disable();
+      Serial.print("Stop! Error.");
       return 0;
     }
 
@@ -983,104 +428,648 @@ uint8_t DCMotor::HomingLoadCell(float target_force)
   Serial.print("Homing Load Cell...");
   this->Enable();
 
-  while (this->motor_state == kEnable)
+  while (true)
   {
-    float avg_loadcell_val = 0;
-    for (int i = 0; i < NUMBER_OF_LOADCELL_MODULE; i++)
+    if(this->motor_state == kEnable)
     {
-      avg_loadcell_val += g_loadcell_val[i];
-    }
-    avg_loadcell_val = avg_loadcell_val / NUMBER_OF_LOADCELL_MODULE;
+      float avg_loadcell_val = 0;
+      for (int i = 0; i < NUMBER_OF_LOADCELL_MODULE; i++)
+      {
+        avg_loadcell_val += g_loadcell_val[i];
+      }
+      avg_loadcell_val = avg_loadcell_val / NUMBER_OF_LOADCELL_MODULE;
 
-    if (avg_loadcell_val >= target_force)
-    {
-      this->actual_position = 0;
-      this->difference_position = this->difference_position + (this->absolute_position - this->actual_position);
-
-      this->Disable();
-      Serial.print("Finished -> avg_val : ");
-      Serial.println(avg_loadcell_val);
-      return 1;
+      if (avg_loadcell_val >= target_force)
+      {
+        this->actual_position = 0;
+        this->Disable();
+        Serial.print("Finished -> avg_val : ");
+        Serial.println(avg_loadcell_val);
+        return 1;
+      }
+      else
+      {
+        this->SetDirCW();
+        this->UpdateVelocity(DUTY_MAX / 10);
+        this->Enable();
+      }
     }
     else
     {
-      this->SetDirCW();
-      this->UpdateVelocity(DUTY_MAX / 10);
-      this->Enable();
+      this->Disable();
+      Serial.print("Stop! Error.");
+      return 0;
+    }
+
+    // Never delete -> if you delete this delay, then the operation will be make problem
+    vTaskDelay((1) / portTICK_PERIOD_MS);
+  }
+}
+
+/*********************************
+ * Move Revolution you want
+ **********************************/
+uint8_t DCMotor::MoveRevolution(long target_rev)
+{
+  Serial.print("One revolution...");
+  if (this->direction == kClockwise)
+  {
+    this->UpdateTargetPosition(this->absolute_position + target_rev*ONE_REVOLUTION);
+    this->SetDirCW();
+    this->UpdateVelocity(DUTY_MAX / 10);
+    this->Enable();
+  }
+  else if (this->direction == kCounterClockwise)
+  {
+    this->UpdateTargetPosition(this->absolute_position - target_rev*ONE_REVOLUTION);
+    this->SetDirCCW();
+    this->UpdateVelocity(DUTY_MAX / 10);
+    this->Enable();
+  }
+
+  while (true)
+  {
+    if (this->motor_state == kEnable)
+    {
+      if (this->direction == kClockwise)
+      {
+        if (this->absolute_position >= this->target_position)
+        {
+          this->Disable();
+          Serial.println("Done");
+          return 1;
+        }
+      }
+      else if (this->direction == kCounterClockwise)
+      {
+        if (this->absolute_position <= this->target_position)
+        {
+          this->Disable();
+          Serial.println("Done");
+          return 1;
+        }
+      }
+    }
+    else
+    {
+      this->Disable();
+      Serial.println("fail");
+      return 0;
     }
 
     // Never delete -> if you delete this delay, then the operation will be make problem
     vTaskDelay((1) / portTICK_PERIOD_MS);
   }
 
-  Serial.println("Loadcell homing error");
-  return 0;
-}
-
-/*********************************
- * Set zero based on Load Cell
- **********************************/
-uint8_t DCMotor::MoveOneRevolution()
-{
-  Serial.print("one revolution...");
-  if (this->direction == kClockwise)
-  {
-    this->UpdatePosition(this->actual_position + ONE_RESOLUTION);
-    this->SetDirCW();
-    this->Enable();
-  }
-  else if (this->direction == kCounterClockwise)
-  {
-    this->UpdatePosition(this->actual_position - ONE_RESOLUTION);
-    this->SetDirCCW();
-    this->Enable();
-  }
-
-  while (this->motor_state == kEnable)
-  {
-    if (this->direction == kClockwise)
-    {
-      if (this->actual_position <= this->target_position)
-      {
-        this->UpdateVelocity(DUTY_MAX / 10);
-        this->Enable();
-      }
-      else
-      {
-        this->Disable();
-        Serial.println("Done");
-        return 1;
-      }
-    }
-
-    else if (this->direction == kCounterClockwise)
-    {
-      if (this->actual_position >= this->target_position)
-      {
-        this->UpdateVelocity(DUTY_MAX / 10);
-        this->Enable();
-      }
-      else
-      {
-        this->Disable();
-        Serial.println("Done");
-        return 1;
-      }
-    }
-  }
-
   Serial.println("One Revolution error");
   return 0;
 }
 
+//==================================================================================================
+/**
+ * @note [CLASS] Motor Initialize & operate Functions 
+ *        - END              */
+//==================================================================================================
+
+
+
+
+
+
+/*********************************
+ * Encoder Interrupt Phase A
+ **********************************/
+void isr_encoder_phase_A()
+{
+  if (digitalRead(PIN_ENCODER_PHASE_A) == HIGH)
+  {
+    // check channel B to see which way encoder is turning
+    if (digitalRead(PIN_ENCODER_PAHSE_B) == LOW)
+    {
+      GripperMotor.absolute_position += 1;
+      GripperMotor.actual_position += 1;
+    }
+    else
+    {
+      GripperMotor.absolute_position -= 1;
+      GripperMotor.actual_position -= 1;
+    }
+  }
+  else // must be a high-to-low edge on channel A
+  {
+    // check channel B to see which way encoder is turning
+    if (digitalRead(PIN_ENCODER_PAHSE_B) == HIGH)
+    {
+      GripperMotor.absolute_position += 1;
+      GripperMotor.actual_position += 1;
+    }
+    else
+    {
+      GripperMotor.absolute_position -= 1;
+      GripperMotor.actual_position -= 1;
+    }
+  }
+}
+
+/*********************************
+ * Encoder Interrupt Phase B
+ **********************************/
+void isr_encoder_phase_B()
+{
+  // look for a low-to-high on channel B
+  if (digitalRead(PIN_ENCODER_PAHSE_B) == HIGH)
+  {
+    // check channel A to see which way encoder is turning
+    if (digitalRead(PIN_ENCODER_PHASE_A) == HIGH)
+    {
+      GripperMotor.absolute_position += 1;
+      GripperMotor.actual_position += 1;
+    }
+    else
+    {
+      GripperMotor.absolute_position -= 1;
+      GripperMotor.actual_position -= 1;
+    }
+  }
+  // Look for a high-to-low on channel B
+  else
+  {
+    // check channel B to see which way encoder is turning
+    if (digitalRead(PIN_ENCODER_PHASE_A) == LOW)
+    {
+      GripperMotor.absolute_position += 1;
+      GripperMotor.actual_position += 1;
+    }
+    else
+    {
+      GripperMotor.absolute_position -= 1;
+      GripperMotor.actual_position -= 1;
+    }
+  }
+}
+
+/*********************************
+ * Encoder initialization
+ **********************************/
+void EncoderInit()
+{
+  Serial.print("Encoder interrupter Initializing...");
+  pinMode(PIN_ENCODER_PHASE_A, INPUT);
+  pinMode(PIN_ENCODER_PAHSE_B, INPUT);
+  attachInterrupt(digitalPinToInterrupt(PIN_ENCODER_PHASE_A), isr_encoder_phase_A, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(PIN_ENCODER_PAHSE_B), isr_encoder_phase_B, CHANGE);
+
+  GripperMotor.absolute_position = 0;
+  GripperMotor.absolute_position = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
+  // GripperMotor.actual_position = 0;
+  // GripperMotor.actual_position = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
+
+  delay(100);
+  Serial.print("DONE");
+  Serial.print(" --> EEPROM_pos : ");
+  Serial.print(GripperMotor.absolute_position);
+  Serial.print(" / target Pos : ");
+  Serial.println(TARGET_POS);
+}
+
+
+#if ACTIVE_LOADCELL
+/*********************************
+ * Load Cell Initialization
+ **********************************/
+uint8_t LoadCellInit()
+{
+  Serial.print("Load Cell Inititializing...");
+
+  LoadCell_1.begin();
+  LoadCell_2.begin();
+  LoadCell_3.begin();
+
+  unsigned long stabilizingtime = 2000; // tare preciscion can be improved by adding a few seconds of stabilizing time
+  boolean _tare = true;                 // set this to false if you don't want tare to be performed in the next step
+  byte loadcell_1_rdy = 0;
+  byte loadcell_2_rdy = 0;
+  byte loadcell_3_rdy = 0;
+
+  while ((loadcell_1_rdy + loadcell_2_rdy) < 2)
+  { // run startup, stabilization and tare, both modules simultaniously
+    if (!loadcell_1_rdy)
+      loadcell_1_rdy = LoadCell_1.startMultiple(stabilizingtime, _tare);
+    if (!loadcell_2_rdy)
+      loadcell_2_rdy = LoadCell_2.startMultiple(stabilizingtime, _tare);
+    if (!loadcell_3_rdy)
+      loadcell_3_rdy = LoadCell_3.startMultiple(stabilizingtime, _tare);
+  }
+
+  if (LoadCell_1.getTareTimeoutFlag())
+  {
+    Serial.print("\n");
+    Serial.println("Timeout, check MCU>HX711 no.1 wiring and pin designations");
+  }
+
+  if (LoadCell_2.getTareTimeoutFlag())
+  {
+    Serial.print("\n");
+    Serial.println("Timeout, check MCU>HX711 no.2 wiring and pin designations");
+  }
+
+  if (LoadCell_3.getTareTimeoutFlag())
+  {
+    Serial.print("\n");
+    Serial.println("Timeout, check MCU>HX711 no.3 wiring and pin designations");
+  }
+
+  LoadCell_1.setCalFactor(CALIBRATION_VALUE_1); // user set calibration value (float)
+  LoadCell_2.setCalFactor(CALIBRATION_VALUE_2); // user set calibration value (float)
+  LoadCell_3.setCalFactor(CALIBRATION_VALUE_3); // user set calibration value (float)
+
+  delay(100);
+  Serial.println("Done");
+  return 1;
+}
+#endif
+
+
+/*********************************
+ * EEPROM read
+ **********************************/
+long EEPROMReadlong(int address)
+{
+  long four = EEPROM.read(address);
+  long three = EEPROM.read(address + 1);
+  long two = EEPROM.read(address + 2);
+  long one = EEPROM.read(address + 3);
+
+  return ((four << 0) & 0xFF) + ((three << 8) & 0xFFFF) + ((two << 16) & 0xFFFFFF) + ((one << 24) & 0xFFFFFFFF);
+}
+
+/*********************************
+ * EEPROM write
+ **********************************/
+void EEPROMWritelong(int address, long value)
+{
+  byte four = (value & 0xFF);
+  byte three = ((value >> 8) & 0xFF);
+  byte two = ((value >> 16) & 0xFF);
+  byte one = ((value >> 24) & 0xFF);
+
+  EEPROM.write(address, four);
+  EEPROM.write(address + 1, three);
+  EEPROM.write(address + 2, two);
+  EEPROM.write(address + 3, one);
+}
+
+/*********************************
+ * Monitoring Data & loop time of each Threads
+ **********************************/
+#if ACTIVE_DATA_MONITORING
+void MonitorAllParametersNode(void *pvParameters)
+{
+  while (true)
+  {
+    // curt_time = millis();
+    // temp_time = curt_time - prev_time;
+    // prev_time = curt_time;
+    if (allparameters_monitoring_flag)
+    {
+      Serial.println("=====================================================");
+      Serial.println("-------------------- <Data> -------------------------");
+      Serial.println("LOADCELL_1    LOADCELL_2    LOADCELL_3    ENC_POS(abs)    ENC_POS(acual)");
+      for (int i = 0; i < NUMBER_OF_LOADCELL_MODULE; i++)
+      {
+        Serial.print(g_loadcell_val[i], 4);
+        Serial.print("        ");
+      }
+      Serial.print("   ");
+      Serial.print(GripperMotor.absolute_position);
+      Serial.print("           ");
+      Serial.print(GripperMotor.actual_position);
+      Serial.print("\n");
+      Serial.println("----------------- <Loop Time> -----------------------");
+      Serial.println("EEPROMUpdate  LoadCellUpdate  MotorControl  SerialWriting  SerialReading");
+
+      Serial.print(TimeChecker.loop_time_checker_EEPROMUpdate, 0)   ;Serial.print(" ms          ");
+      Serial.print(TimeChecker.loop_time_checker_LoadCellUpdate, 0) ;Serial.print(" ms          ");
+      Serial.print(TimeChecker.loop_time_checker_MotorOperation, 0) ;Serial.print(" ms          ");
+      Serial.print(TimeChecker.loop_time_checker_SerialReading, 0)  ;Serial.print(" ms          ");
+      Serial.print(TimeChecker.loop_time_checker_SerialWriting, 0)  ;Serial.print(" ms");
+      Serial.print("\n");
+    }
+
+    vTaskDelay((1000 / RTOS_FREQUENCY_MONITORING) / portTICK_PERIOD_MS);
+  }
+}
+#endif
+
+
+/*********************************
+ * Serial Command Information
+ **********************************/
+void SerialCommandINFO()
+{
+  Serial.println("================================ Command Info ======================================");
+  Serial.println("[Protocol] : '/' + 'command_message' + ';' ( Example -> /CW; )");
+  Serial.println("CW                  : clockwise");
+  Serial.println("CCW                 : counter clockwise");
+  Serial.println("SETACTZERO     (Z)  : Set Encoder Actual Pos 0 (actual pos only, not absolute pos)");
+  Serial.println("SETABSZERO     (ZB) : Set Encoder Absolute Pos 0 (absolute pos only, not actual pos)");
+  Serial.println("RUN            (R)  : Move motor depend on user setup direction & speed");
+  Serial.println("STOP           (S)  : Stop motor");
+  Serial.println("HOMING         (H)  : Motor Homing operation (Move until the absolute pos will be 0)");
+  Serial.println("LOADCELLHOMING (LH) : Load cell Homing operation (Move until the average of all loadcell value will be user set (default : 150)");
+  Serial.println("MONITOR        (M)  : Monitoring values & loop time of each threads");
+  Serial.println("NONMONITOR     (N)  : Stop Monitoring");
+  Serial.println("Q                   : Show Command Info");
+  Serial.println("====================================================================================");
+}
+
+/*********************************
+ * RTOS Thread Initializing
+ **********************************/
+#if ACTIVE_RTOS_THREAD
+uint8_t RTOSInit()
+{
+  Serial.print("RTOS Thread Creating...");
+
+#if ACTIVE_LOADCELL
+  xTaskCreate(LoadCellUpdateNode,
+              "LoadCellUpdate",
+              384,
+              NULL,
+              tskIDLE_PRIORITY + 1,
+              NULL);
+#endif
+
+#if ACTIVE_DATA_MONITORING
+  xTaskCreate(MonitorAllParametersNode,
+              "MonitorAllParameters",
+              128,
+              NULL,
+              tskIDLE_PRIORITY + 1,
+              NULL);
+#endif
+
+#if ACTIVE_MOTOR
+  xTaskCreate(MotorOperatingNode,
+              "MotorOperationMode",
+              256,
+              NULL,
+              tskIDLE_PRIORITY + 1,
+              NULL);
+#endif
+
+  xTaskCreate(SerialWritingNode,
+              "SerialWritingNode",
+              256,
+              NULL,
+              tskIDLE_PRIORITY + 1,
+              NULL);
+
+  xTaskCreate(SerialReadingNode,
+              "SerialReadingNode",
+              256,
+              NULL,
+              tskIDLE_PRIORITY + 1,
+              NULL);
+
+  xTaskCreate(EEPROMSaveNode,
+              "EEPROMSave",
+              128,
+              NULL,
+              tskIDLE_PRIORITY + 1,
+              NULL);
+
+  xTaskCreate(LEDIndicator,
+              "LEDIndicator_Debug",
+              64,
+              NULL,
+              tskIDLE_PRIORITY + 1,
+              NULL);
+
+  Serial.println("Done");
+
+  // if vTaskStartScheduler doen't work, under line will be operated.
+  vTaskStartScheduler();
+  Serial.println("vTaskStartScheduler() failed!!!");
+
+  return 0;
+}
+#endif
+
+
+//==================================================================================================
+/**
+ * @note THREADS Nodes
+ *        - START               */
+//==================================================================================================
+
+/*********************************
+ * Motor Sequences
+ **********************************/
 void MotorOperatingNode(void *pvParameters)
 {
+  static unsigned long curt_time = millis();
+  static unsigned long prev_time = millis();
+  static unsigned long temp_time = 0;
+
   while(true)
   {
+    curt_time = millis();
+    temp_time = curt_time - prev_time;
+    prev_time = curt_time;
+
     if     (GripperMotor.op_command == kHoming)  GripperMotor.Homing(HOMING_THRESHOLD);
     else if(GripperMotor.op_command == kHomingLoadcell) GripperMotor.HomingLoadCell(LOADCELL_HOMING_VALUE);
-    else if(GripperMotor.op_command == kOneRevolution) GripperMotor.MoveOneRevolution();
-    // Serial.print("MODE : "); Serial.println(GripperMotor.op_command);
+    else if(GripperMotor.op_command == kRevolution) GripperMotor.MoveRevolution(TARGET_REVOLTION);
+
+    TimeChecker.loop_time_checker_MotorOperation = temp_time;    
     vTaskDelay((1) / portTICK_PERIOD_MS);
   }
 }
+
+/*********************************
+ * Serial Communication Update
+ **********************************/
+void SerialReadingNode(void *pvParameters)
+{
+  SerialCommandINFO();
+
+  while (true)
+  {
+    if(Serial.available() <= 0) continue;
+
+    // received messages update
+    str_recv_buffer += Serial.readString();
+    // find '/'
+    int ipos0 = str_recv_buffer.indexOf('/');
+    if(ipos0 <0) continue;
+    // find ';'
+    int ipos1 = str_recv_buffer.indexOf(';');
+    if(ipos1 <0) continue;
+    // get valid message & recv_buffer clear
+    String valid_msg = str_recv_buffer.substring(ipos0+1, ipos1);
+    str_recv_buffer = "";
+
+    if     (valid_msg == "CW")             GripperMotor.SetDirCW();
+    else if(valid_msg == "CCW")            GripperMotor.SetDirCCW();
+    else if(valid_msg == "SETACTZERO")     GripperMotor.actual_position = 0;
+    else if(valid_msg == "Z")              GripperMotor.actual_position = 0;
+    else if(valid_msg == "SETABSZERO")     GripperMotor.absolute_position = 0;
+    else if(valid_msg == "ZB")             GripperMotor.absolute_position = 0;
+    else if(valid_msg == "RUN")           {GripperMotor.motor_state = kEnable; GripperMotor.UpdateVelocity(DUTY_MAX/10);}
+    else if(valid_msg == "R")             {GripperMotor.motor_state = kEnable; GripperMotor.UpdateVelocity(DUTY_MAX/10);}
+    else if(valid_msg == "STOP")           GripperMotor.Disable();
+    else if(valid_msg == "S")              GripperMotor.Disable();
+    else if(valid_msg == "HOMING")         GripperMotor.op_command = kHoming;
+    else if(valid_msg == "H")              GripperMotor.op_command = kHoming;
+    else if(valid_msg == "LOADCELLHOMING") GripperMotor.op_command = kHomingLoadcell;
+    else if(valid_msg == "LH")             GripperMotor.op_command = kHomingLoadcell;
+    else if(valid_msg == "REVOLUTION")     GripperMotor.op_command = kRevolution;
+    else if(valid_msg == "O")              GripperMotor.op_command = kRevolution;
+    else if(valid_msg == "MONITOR")        allparameters_monitoring_flag = true;
+    else if(valid_msg == "M")              allparameters_monitoring_flag = true;
+    else if(valid_msg == "NONMONITOR")     allparameters_monitoring_flag = false;
+    else if(valid_msg == "N")              allparameters_monitoring_flag = false;
+    else if(valid_msg == "Q")              SerialCommandINFO();
+
+    Serial.print("Command Message : "); Serial.println(valid_msg);
+    vTaskDelay((1000/RTOS_FREQUENCY_SERIALREADING) / portTICK_PERIOD_MS);
+  }
+}
+void SerialWritingNode(void *pvParameters)
+{
+  static unsigned long curt_time = millis();
+  static unsigned long prev_time = millis();
+  static unsigned long temp_time = 0;
+
+  while(true)
+  {
+    curt_time = millis();
+    temp_time = curt_time - prev_time;
+    prev_time = curt_time;
+
+    str_send_buffer += String(GripperMotor.motor_state) + ",";
+    str_send_buffer += String(GripperMotor.op_command) +",";
+    for(int i=0; i<NUMBER_OF_LOADCELL_MODULE; i++)
+    {
+      str_send_buffer += String(g_loadcell_val[i]) + ",";
+    }
+    str_send_buffer += String(GripperMotor.absolute_position);
+
+    Serial.println(str_send_buffer);
+    Serial.flush();
+
+    str_send_buffer ="";
+    TimeChecker.loop_time_checker_SerialWriting = temp_time;
+    vTaskDelay( (1000/RTOS_FREQUENCY_SERIALWRITING) / portTICK_PERIOD_MS);
+  }
+}
+
+/*********************************
+ * EEPROM Update (Global encoder pos update)
+ **********************************/
+void EEPROMSaveNode(void *pvParameters)
+{
+  static unsigned long curt_time = millis();
+  static unsigned long prev_time = millis();
+  static unsigned long temp_time = 0;
+
+  while (true)
+  {
+    curt_time = millis();
+    temp_time = curt_time - prev_time;
+    prev_time = curt_time;
+
+    EEPROMWritelong(ENCODER_POS_EEPROM_ADDRESS, GripperMotor.absolute_position);
+    // long k = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
+
+    TimeChecker.loop_time_checker_EEPROMUpdate = temp_time;
+    vTaskDelay((1000 / RTOS_FREQUENCY_EEPROM_SAVE) / portTICK_PERIOD_MS);
+  }
+}
+
+/*********************************
+ * Load Cell data Update
+ **********************************/
+void LoadCellUpdateNode(void *pvParameters)
+{
+  static unsigned long curt_time = millis();
+  static unsigned long prev_time = millis();
+  static unsigned long temp_time = 0;
+
+  while (true)
+  {
+    curt_time = millis();
+    temp_time = curt_time - prev_time;
+    prev_time = curt_time;
+
+    LoadCell_1.update();
+    LoadCell_2.update();
+    LoadCell_3.update();
+    g_loadcell_val[0] = LoadCell_1.getData();
+    g_loadcell_val[1] = LoadCell_2.getData();
+    g_loadcell_val[2] = LoadCell_3.getData();
+
+    TimeChecker.loop_time_checker_LoadCellUpdate = temp_time;
+    // vTaskDelay( (1000/RTOS_FREQUENCY_LOADCELLUPDATE - (int)temp_time) / portTICK_PERIOD_MS );
+    vTaskDelay((1000 / RTOS_FREQUENCY_LOADCELLUPDATE) / portTICK_PERIOD_MS);
+  }
+}
+
+/*********************************
+ * Indicator for operating successfully
+ **********************************/
+static void LEDIndicator(void *pvParameters)
+{
+  while(true)
+  {
+    vTaskDelay(500);
+    digitalWrite(PIN_BOARD_LED, HIGH);
+    vTaskDelay(500);
+    digitalWrite(PIN_BOARD_LED, LOW);
+  }
+}
+
+//==================================================================================================
+/**
+ * @note THREADS Nodes
+ *        - END               */
+//==================================================================================================
+
+
+
+
+//<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Setup & Loop >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+//                                 -START-
+
+void setup()
+{
+  // put your setup code here, to run once:
+  delay(3000);
+  Serial.begin(BAUDRATE);
+  Serial.setTimeout(1);
+  Serial.println("Initializing...");
+  pinMode(PIN_BOARD_LED, OUTPUT);
+
+  if (ACTIVE_MOTOR)
+    GripperMotor.PWMInit();
+    EncoderInit();
+  if (ACTIVE_LOADCELL)
+    LoadCellInit();
+  if (ACTIVE_RTOS_THREAD)
+    RTOSInit();
+
+  Serial.println("All Initializing DONE.");
+  delay(2000);
+}
+
+void loop()
+{
+  /**
+   * @brief no operating source in loop()
+   * @note  RTOS Thread was operating each part
+   */
+}
+
+//<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Setup & Loop >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+//                                  -END-
