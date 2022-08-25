@@ -56,11 +56,11 @@
 
 // ROTS Threads Frequency Setting
 #define RTOS_FREQUENCY                  100     // Hz (Default)
-#define RTOS_FREQUENCY_LOADCELLUPDATE   500     // Hz (Default)
-#define RTOS_FREQUENCY_MOTOR_OPERATION  500     // Hz (Default)
+#define RTOS_FREQUENCY_LOADCELLUPDATE   250     // Hz (Default)
+#define RTOS_FREQUENCY_MOTOR_OPERATION  250     // Hz (Default)
 #define RTOS_FREQUENCY_EEPROM_SAVE      100     // Hz (Default)
 #define RTOS_FREQUENCY_MONITORING       10      // Hz (Default)
-#define RTOS_FREQUENCY_SERIALREADING    1000      // Hz (Default)
+#define RTOS_FREQUENCY_SERIALREADING    500      // Hz (Default)
 #define RTOS_FREQUENCY_SERIALWRITING    10      // Hz (Default)
 
 /*********************************
@@ -746,7 +746,7 @@ void MonitorAllParametersNode(void *pvParameters)
       Serial.print(GripperMotor.actual_position);
       Serial.print("\n");
       Serial.println("----------------- <Loop Time> -----------------------");
-      Serial.println("EEPROMUpdate  LoadCellUpdate  MotorControl  SerialWriting  SerialReading");
+      Serial.println("EEPROMUpdate  LoadCellUpdate  MotorControl  SerialReading  SerialWriting");
 
       Serial.print(TimeChecker.loop_time_checker_EEPROMUpdate, 0)   ;Serial.print(" ms          ");
       Serial.print(TimeChecker.loop_time_checker_LoadCellUpdate, 0) ;Serial.print(" ms          ");
