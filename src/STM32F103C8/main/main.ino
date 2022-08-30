@@ -6,7 +6,7 @@
  * @author Dae-Yun Jang (bigyun9375@gmail.com)
  * @git  https://github.com/Bigyuun/gripper_ws
  * @version 0.1
- * @date 2022-08-25
+ * @date 2022-08-30
  * @copyright Copyright (c) 2022
  * @brief
  * DC motor control using encoder CODE
@@ -37,110 +37,105 @@
 
 //#define USE_SEMAPHORE_DMA1
 #include <EEPROM.h>
-#include <MapleFreeRTOS821.h> // For Using RTOS Thread
-#include <HX711_ADC.h>        // For Initializing Load Cell
-#include <HardwareTimer.h>    // For Setup PWM Timer
+#include <MapleFreeRTOS821.h>         // For Using RTOS Thread
+#include <HX711_ADC.h>                // For Initializing Load Cell
+#include <HardwareTimer.h>            // For Setup PWM Timer
 
 /*********************************
  * Process Setting
  *********************************/
 // Hardware setting
-#define NUMBER_OF_LOADCELL_MODULE 3
-#define NUMBER_OF_MOTOR_DRIVER 1
-#define NUMBER_OF_RTOS_THREADS 5
+#define NUMBER_OF_LOADCELL_MODULE        3
+#define NUMBER_OF_MOTOR_DRIVER           1
 
 // Utility On & OFF setting
-#define ACTIVE_LOADCELL 1        // 1-ON, 0-OFF
-#define ACTIVE_MOTOR 1           // 1-ON, 0-OFF
-#define ACTIVE_DATA_MONITORING 1 // 1-ON, 0-OFF
-#define ACTIVE_SERIAL_READING 1  // 1-ON, 0-OFF
-#define ACTIVE_SERIAL_WRITING 1  // 1-ON, 0-OFF
-#define ACTIVE_RTOS_THREAD 1     // 1-ON, 0-OFF
+#define ACTIVE_LOADCELL                  1  // 1-ON, 0-OFF
+#define ACTIVE_MOTOR                     1  // 1-ON, 0-OFF
+#define ACTIVE_DATA_MONITORING           1  // 1-ON, 0-OFF
+#define ACTIVE_SERIAL_READING            1  // 1-ON, 0-OFF
+#define ACTIVE_SERIAL_WRITING            1  // 1-ON, 0-OFF
+#define ACTIVE_RTOS_THREAD               1  // 1-ON, 0-OFF
 
 // ROTS Threads Frequency Setting
-#define RTOS_FREQUENCY 100                 // Hz (Default)
-#define RTOS_FREQUENCY_LOADCELLUPDATE 500  // Hz (Default)
-#define RTOS_FREQUENCY_MOTOR_OPERATION 500 // Hz (Default)
-#define RTOS_FREQUENCY_EEPROM_SAVE 250     // H-z (Default)
-#define RTOS_FREQUENCY_MONITORING 10       // Hz (Default)
-#define RTOS_FREQUENCY_SERIALREADING 500   // Hz (Default)
-#define RTOS_FREQUENCY_SERIALWRITING 250    // Hz (Default)
-#define TOTAL_SYSTEM_DELAY 1               // ms
+#define RTOS_FREQUENCY                   100   // Hz (Default)
+#define RTOS_FREQUENCY_LOADCELLUPDATE    500   // Hz (Default)
+#define RTOS_FREQUENCY_MOTOR_OPERATION   500   // Hz (Default)
+#define RTOS_FREQUENCY_EEPROM_SAVE       250   // H-z (Default)
+#define RTOS_FREQUENCY_MONITORING        10    // Hz (Default)
+#define RTOS_FREQUENCY_SERIALREADING     500   // Hz (Default)
+#define RTOS_FREQUENCY_SERIALWRITING     250   // Hz (Default)
+#define TOTAL_SYSTEM_DELAY               1     // ms
 
 /*********************************
  * Serial communication Parameters
  *********************************/
-#define BAUDRATE 115200
-#define BANDWIDTH 10
+#define BAUDRATE                         115200
+#define BANDWIDTH                        10
 
 /*********************************
  * MCU
  *********************************/
-#define CPU_CLOCK_SPEED 72 // mHz
+#define CPU_CLOCK_SPEED                  72 // mHz
 
 /*********************************
  * PWM Timer
  *********************************/
-#define PRESCALER 1
-#define COUNTER_PERIOD 3600
-#define DUTY_MAX COUNTER_PERIOD // same as COUNTER_PERIOD
-#define DUTY_MIN 0
+#define PRESCALER                        1
+#define COUNTER_PERIOD                   3600
+#define DUTY_MAX                         COUNTER_PERIOD // same as COUNTER_PERIOD
+#define DUTY_MIN                         0
 
 /*********************************
  * Pin match
  *********************************/
 // Encoder pin (interrupt)
-#define PIN_ENCODER_PHASE_A PA0
-#define PIN_ENCODER_PAHSE_B PA1
+#define PIN_ENCODER_PHASE_A              PA0
+#define PIN_ENCODER_PAHSE_B              PA1
 
-// Motor Conrol pin
-#define PIN_MOTOR_PWM PA2
-#define PIN_MOTOR_CCW PA3
-#define PIN_MOTOR_CW PA4
+// Motor Conrol pin            
+#define PIN_MOTOR_PWM                    PA2
+#define PIN_MOTOR_CCW                    PA3
+#define PIN_MOTOR_CW                     PA4
 
-// Load Cell pin
-#define HX711_DOUT_1 PB4 // mcu > HX711 no 1 dout pin
-#define HX711_SCK_1 PB5  // mcu > HX711 no 1 sck pin
-#define HX711_DOUT_2 PB6 // mcu > HX711 no 2 dout pin
-#define HX711_SCK_2 PB7  // mcu > HX711 no 2 sck pin
-#define HX711_DOUT_3 PB8 // mcu > HX711 no 3 dout pin
-#define HX711_SCK_3 PB9  // mcu > HX711 no 3 sck pin
+// Load Cell pin             
+#define HX711_DOUT_1                     PB4 // mcu > HX711 no 1 dout pin
+#define HX711_SCK_1                      PB5  // mcu > HX711 no 1 sck pin
+#define HX711_DOUT_2                     PB6 // mcu > HX711 no 2 dout pin
+#define HX711_SCK_2                      PB7  // mcu > HX711 no 2 sck pin
+#define HX711_DOUT_3                     PB8 // mcu > HX711 no 3 dout pin
+#define HX711_SCK_3                      PB9  // mcu > HX711 no 3 sck pin
 
-// Debug & Test pin
-#define PIN_BOARD_LED PC13
-#define PIN_LED PB10
+// Debug & Test pin            
+#define PIN_BOARD_LED                    PC13
+#define PIN_LED                          PB10
 
 /*********************************
  * Motor info
  *********************************/
-#define GEAR_RATIO 298
-#define GRIPPER_GEAR_RATIO 3.814814814
+#define GEAR_RATIO                       298
+#define GRIPPER_GEAR_RATIO               3.814814814
 
 /*********************************
  * Encoder info
  *********************************/
-#define ENCODER_POS_EEPROM_ADDRESS 0
-#define ENCODER_RESOLUTION 7
-#define HOMING_THRESHOLD 150
+#define ENCODER_POS_EEPROM_ADDRESS       0
+#define ENCODER_RESOLUTION               7
+#define HOMING_THRESHOLD                 150
 
 /*********************************
  * Load Cell info
  *********************************/
-// #define CALIBRATION_VALUE           2072.0 // calibration value load cell 1
-// #define CALIBRATION_VALUE_2         2072.0 // calibration value load cell 2
-// #define CALIBRATION_VALUE_3         2072.0 // calibration value load cell 3
-
-#define CALIBRATION_VALUE_1 2935.8 // calibration value load cell 1
-#define CALIBRATION_VALUE_2 2987.0 // calibration value load cell 2
-#define CALIBRATION_VALUE_3 3072.0 // calibration value load cell 3
-#define LOADCELL_HOMING_VALUE 150
+#define CALIBRATION_VALUE_1              2935.8 // calibration value load cell 1
+#define CALIBRATION_VALUE_2              2987.0 // calibration value load cell 2
+#define CALIBRATION_VALUE_3              3072.0 // calibration value load cell 3
+#define LOADCELL_HOMING_VALUE            150
 
 /*********************************
  * Setting info
  *********************************/
-#define TARGET_REVOLTION 1
-#define TARGET_POS (GEAR_RATIO * ENCODER_RESOLUTION * 4 * GRIPPER_GEAR_RATIO * TARGET_REVOLTION)
-#define ONE_REVOLUTION (GEAR_RATIO * ENCODER_RESOLUTION * 4 * GRIPPER_GEAR_RATIO)
+#define TARGET_REVOLTION                 1
+#define TARGET_POS                      (GEAR_RATIO * ENCODER_RESOLUTION * 4 * GRIPPER_GEAR_RATIO * TARGET_REVOLTION)
+#define ONE_REVOLUTION                  (GEAR_RATIO * ENCODER_RESOLUTION * 4 * GRIPPER_GEAR_RATIO)
 
 /*********************************
  * Manual functions
@@ -166,9 +161,9 @@ struct LoopTimeChecker
 {
   float loop_time_checker_LoadCellUpdate = -1;
   float loop_time_checker_MotorOperation = -1;
-  float loop_time_checker_EEPROMUpdate = -1;
-  float loop_time_checker_SerialWriting = -1;
-  float loop_time_checker_SerialReading = -1;
+  float loop_time_checker_EEPROMUpdate   = -1;
+  float loop_time_checker_SerialWriting  = -1;
+  float loop_time_checker_SerialReading  = -1;
 };
 
 enum MotorDirection
@@ -176,7 +171,7 @@ enum MotorDirection
   kNoneDir,
   kClockwise,
   kCounterClockwise,
-};
+}; 
 enum MotorState
 {
   kDisable,
@@ -184,7 +179,7 @@ enum MotorState
 };
 enum MotorOperationMode
 {
-  kVelocityMode,
+  kVelocityMode = 1,
   kPositionMode,
 };
 enum MotorCommand
@@ -271,9 +266,6 @@ String str_recv_buffer;
 String str_send_buffer;
 
 // Task synchronization (mutex & semaphore)
-// xSemaphoreHandle xMutex;
-
-// TaskHandle_t xMutex = NULL;
 xSemaphoreHandle xMutex;
 
 //==================================================================================================
@@ -285,7 +277,6 @@ DCMotor::DCMotor()
 {
   anchor = this;
 }
-
 void DCMotor::Enable()
 {
   this->motor_state = kEnable;
@@ -337,18 +328,10 @@ void DCMotor::UpdateVelocity(int duty)
     pwmWrite(PIN_MOTOR_PWM, this->target_velocity);
   }
 }
-void DCMotor::UpdateTargetPosition(long val)
-{
-  this->target_position = val;
-}
-void DCMotor::SetActualPosZero()
-{
-  this->actual_position = 0;
-}
-void DCMotor::SetAbsolutePosZero()
-{
-  this->absolute_position = 0;
-}
+void DCMotor::UpdateTargetPosition(long val)  {this->target_position = val;}
+void DCMotor::SetActualPosZero()              {this->actual_position = 0;}
+void DCMotor::SetAbsolutePosZero()            {this->absolute_position = 0;}
+
 /*********************************
  * PWM setting (Timer Register)
  **********************************/
@@ -548,7 +531,7 @@ uint8_t DCMotor::MoveRevolution(long target_rev)
       this->Disable();
       if (xSemaphoreTake(xMutex, (portTickType)10) == true)
       {
-        Serial.println("/MRFAIL;");
+        Serial.println("/FAIL;");
         xSemaphoreGive(xMutex);
       }
       return 0;
@@ -557,8 +540,6 @@ uint8_t DCMotor::MoveRevolution(long target_rev)
     // Never delete -> if you delete this delay, then the operation will be make problem
     vTaskDelay((1) / portTICK_PERIOD_MS);
   }
-  
-  Serial.println("One Revolution error");
   return 0;
 }
 
@@ -623,7 +604,7 @@ void isr_encoder_phase_B()
       GripperMotor.actual_position -= 1;
     }
   }
-  // Look for a high-to-low on channel B
+  // look for a high-to-low on channel B
   else
   {
     // check channel B to see which way encoder is turning
@@ -653,12 +634,10 @@ void EncoderInit()
 
   GripperMotor.absolute_position = 0;
   GripperMotor.absolute_position = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
-  // GripperMotor.actual_position = 0;
-  // GripperMotor.actual_position = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
 
   delay(100);
   Serial.print("DONE");
-  Serial.print(" --> EEPROM_pos : ");
+  Serial.print(" -> EEPROM_pos : ");
   Serial.print(GripperMotor.absolute_position);
   Serial.print(" / target Pos : ");
   Serial.println(TARGET_POS);
@@ -714,7 +693,6 @@ uint8_t LoadCellInit()
   LoadCell_2.setCalFactor(CALIBRATION_VALUE_2); // user set calibration value (float)
   LoadCell_3.setCalFactor(CALIBRATION_VALUE_3); // user set calibration value (float)
 
-  delay(100);
   Serial.println("Done");
   return 1;
 }
@@ -813,7 +791,7 @@ void SerialCommandINFO()
   Serial.println("LOADCELLHOMING (LH) : Load cell Homing operation (Move until the average of all loadcell value will be user set (default : 150)");
   Serial.println("MONITOR        (M)  : Monitoring values & loop time of each threads");
   Serial.println("NONMONITOR     (N)  : Stop Monitoring");
-  Serial.println("Q                   : Show Command Info");
+  Serial.println("I                   : Show Command Info");
   Serial.println("====================================================================================");
 }
 
@@ -917,12 +895,9 @@ void MotorOperatingNode(void *pvParameters)
     temp_time = curt_time - prev_time;
     prev_time = curt_time;
 
-    if (GripperMotor.op_command == kHoming)
-      GripperMotor.Homing(HOMING_THRESHOLD);
-    else if (GripperMotor.op_command == kHomingLoadcell)
-      GripperMotor.HomingLoadCell(LOADCELL_HOMING_VALUE);
-    else if (GripperMotor.op_command == kRevolution)
-      GripperMotor.MoveRevolution(TARGET_REVOLTION);
+    if      (GripperMotor.op_command == kHoming)          GripperMotor.Homing(HOMING_THRESHOLD);
+    else if (GripperMotor.op_command == kHomingLoadcell)  GripperMotor.HomingLoadCell(LOADCELL_HOMING_VALUE);
+    else if (GripperMotor.op_command == kRevolution)      GripperMotor.MoveRevolution(TARGET_REVOLTION);
 
     TimeChecker.loop_time_checker_MotorOperation = temp_time;
     vTaskDelay(((1000 / RTOS_FREQUENCY_MOTOR_OPERATION) - TOTAL_SYSTEM_DELAY) / portTICK_PERIOD_MS);
@@ -956,57 +931,34 @@ void SerialReadingNode(void *pvParameters)
     String valid_msg = str_recv_buffer.substring(ipos0 + 1, ipos1);
     str_recv_buffer = "";
 
-    if (valid_msg == "CW")
-      GripperMotor.SetDirCW();
-    else if (valid_msg == "CCW")
-      GripperMotor.SetDirCCW();
-    else if (valid_msg == "SETACTZERO")
-      GripperMotor.actual_position = 0;
-    else if (valid_msg == "Z")
-      GripperMotor.actual_position = 0;
-    else if (valid_msg == "SETABSZERO")
-      GripperMotor.absolute_position = 0;
-    else if (valid_msg == "ZB")
-      GripperMotor.absolute_position = 0;
-    else if (valid_msg == "RUN")
-    {
-      GripperMotor.motor_state = kEnable;
-      GripperMotor.UpdateVelocity(DUTY_MAX / 10);
-    }
-    else if (valid_msg == "R")
-    {
-      GripperMotor.motor_state = kEnable;
-      GripperMotor.UpdateVelocity(DUTY_MAX / 10);
-    }
-    else if (valid_msg == "STOP")
-      GripperMotor.Disable();
-    else if (valid_msg == "S")
-      GripperMotor.Disable();
-    else if (valid_msg == "HOMING")
-      GripperMotor.op_command = kHoming;
-    else if (valid_msg == "H")
-      GripperMotor.op_command = kHoming;
-    else if (valid_msg == "LOADCELLHOMING")
-      GripperMotor.op_command = kHomingLoadcell;
-    else if (valid_msg == "LH")
-      GripperMotor.op_command = kHomingLoadcell;
-    else if (valid_msg == "REVOLUTION")
-      GripperMotor.op_command = kRevolution;
-    else if (valid_msg == "O")
-      GripperMotor.op_command = kRevolution;
-    else if (valid_msg == "MONITOR")
-      allparameters_monitoring_flag = true;
-    else if (valid_msg == "M")
-      allparameters_monitoring_flag = true;
-    else if (valid_msg == "NONMONITOR")
-      allparameters_monitoring_flag = false;
-    else if (valid_msg == "N")
-      allparameters_monitoring_flag = false;
-    else if (valid_msg == "Q")
-      SerialCommandINFO();
+    if (valid_msg == "CW")                  GripperMotor.SetDirCW();
+    else if (valid_msg == "CCW")            GripperMotor.SetDirCCW();
+    else if (valid_msg == "SETACTZERO")     GripperMotor.actual_position = 0;
+    else if (valid_msg == "Z")              GripperMotor.actual_position = 0;
+    else if (valid_msg == "SETABSZERO")     GripperMotor.absolute_position = 0;
+    else if (valid_msg == "ZB")             GripperMotor.absolute_position = 0;
+    else if (valid_msg == "RUN")           {GripperMotor.motor_state = kEnable;
+                                            GripperMotor.UpdateVelocity(DUTY_MAX / 10);
+                                            }
+    else if (valid_msg == "R")             {GripperMotor.motor_state = kEnable;
+                                            GripperMotor.UpdateVelocity(DUTY_MAX / 10);
+                                            }
+    else if (valid_msg == "STOP")           GripperMotor.Disable();
+    else if (valid_msg == "S")              GripperMotor.Disable();
+    else if (valid_msg == "HOMING")         GripperMotor.op_command = kHoming;
+    else if (valid_msg == "H")              GripperMotor.op_command = kHoming;
+    else if (valid_msg == "LOADCELLHOMING") GripperMotor.op_command = kHomingLoadcell;
+    else if (valid_msg == "LH")             GripperMotor.op_command = kHomingLoadcell;
+    else if (valid_msg == "REVOLUTION")     GripperMotor.op_command = kRevolution;
+    else if (valid_msg == "O")              GripperMotor.op_command = kRevolution;
+    else if (valid_msg == "MONITOR")        allparameters_monitoring_flag = true;
+    else if (valid_msg == "M")              allparameters_monitoring_flag = true;
+    else if (valid_msg == "NONMONITOR")     allparameters_monitoring_flag = false;
+    else if (valid_msg == "N")              allparameters_monitoring_flag = false;
+    else if (valid_msg == "I")              SerialCommandINFO();
 
-    Serial.print("Command Message : ");
-    Serial.println(valid_msg);
+    // Serial.print("Command Message : ");
+    // Serial.println(valid_msg);
     vTaskDelay(((1000 / RTOS_FREQUENCY_SERIALREADING)) / portTICK_PERIOD_MS);
   }
 }
@@ -1043,7 +995,7 @@ void SerialWritingNode(void *pvParameters)
       Serial.println(str_send_buffer);
       xSemaphoreGive(xMutex);
     }
-
+ 
     str_send_buffer = "";
     TimeChecker.loop_time_checker_SerialWriting = temp_time;
 //    vTaskDelay(((1000 / RTOS_FREQUENCY_SERIALWRITING) - TOTAL_SYSTEM_DELAY) / portTICK_PERIOD_MS);
@@ -1068,8 +1020,7 @@ void EEPROMSaveNode(void *pvParameters)
     prev_time = curt_time;
 
     EEPROMWritelong(ENCODER_POS_EEPROM_ADDRESS, GripperMotor.absolute_position);
-    // long k = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
-
+    
     TimeChecker.loop_time_checker_EEPROMUpdate = temp_time;
     vTaskDelay(((1000 / RTOS_FREQUENCY_EEPROM_SAVE) - TOTAL_SYSTEM_DELAY) / portTICK_PERIOD_MS);
   }
@@ -1078,6 +1029,7 @@ void EEPROMSaveNode(void *pvParameters)
 /*********************************
  * Load Cell data Update
  **********************************/
+#if ACTIVE_LOADCELL
 void LoadCellUpdateNode(void *pvParameters)
 {
   static unsigned long curt_time = millis();
@@ -1098,10 +1050,10 @@ void LoadCellUpdateNode(void *pvParameters)
     g_loadcell_val[2] = LoadCell_3.getData();
 
     TimeChecker.loop_time_checker_LoadCellUpdate = temp_time;
-    // vTaskDelay( (1000/RTOS_FREQUENCY_LOADCELLUPDATE - (int)temp_time) / portTICK_PERIOD_MS );
     vTaskDelay(((1000 / RTOS_FREQUENCY_LOADCELLUPDATE) - TOTAL_SYSTEM_DELAY) / portTICK_PERIOD_MS);
   }
 }
+#endif
 
 /*********************************
  * Indicator for operating successfully
@@ -1144,17 +1096,15 @@ void setup()
   {
     LoadCellInit();
   }
+
+  /**
+   * @brief RTOS Threads must be created at last
+   */
   if (ACTIVE_RTOS_THREAD)
   {
     vSemaphoreCreateBinary(xMutex); // Semaphore must be created before xTaskCreate()
-    
     RTOSInit();
   }
-
-  
-
-  Serial.println("All Initializing DONE.");
-  delay(2000);
 }
 
 void loop()
