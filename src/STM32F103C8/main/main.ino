@@ -61,9 +61,9 @@
 #define RTOS_FREQUENCY_LOADCELLUPDATE    500   // Hz (Default)
 #define RTOS_FREQUENCY_MOTOR_OPERATION   500   // Hz (Default)
 #define RTOS_FREQUENCY_EEPROM_SAVE       250   // H-z (Default)
-#define RTOS_FREQUENCY_MONITORING        10    // Hz (Default)
+#define RTOS_FREQUENCY_MONITORING        25    // Hz (Default)
 #define RTOS_FREQUENCY_SERIALREADING     500   // Hz (Default)
-#define RTOS_FREQUENCY_SERIALWRITING     250   // Hz (Default)
+#define RTOS_FREQUENCY_SERIALWRITING     100   // Hz (Default)
 #define TOTAL_SYSTEM_DELAY               1     // ms
 
 /*********************************
@@ -112,7 +112,8 @@
 /*********************************
  * Motor info
  *********************************/
-#define GEAR_RATIO                       298
+//#define GEAR_RATIO                       298
+#define GEAR_RATIO                       380
 #define GRIPPER_GEAR_RATIO               3.814814814
 
 /*********************************
@@ -134,8 +135,10 @@
  * Setting info
  *********************************/
 #define TARGET_REVOLTION                 1
-#define TARGET_POS                      (GEAR_RATIO * ENCODER_RESOLUTION * 4 * GRIPPER_GEAR_RATIO * TARGET_REVOLTION)
-#define ONE_REVOLUTION                  (GEAR_RATIO * ENCODER_RESOLUTION * 4 * GRIPPER_GEAR_RATIO)
+//#define TARGET_POS                      (GEAR_RATIO * ENCODER_RESOLUTION * 4 * GRIPPER_GEAR_RATIO * TARGET_REVOLTION)
+#define TARGET_POS                      (GEAR_RATIO * ENCODER_RESOLUTION * 4 * TARGET_REVOLTION)
+//#define ONE_REVOLUTION                  (GEAR_RATIO * ENCODER_RESOLUTION * 4 * GRIPPER_GEAR_RATIO)
+#define ONE_REVOLUTION                  (GEAR_RATIO * ENCODER_RESOLUTION * 4)
 
 /*********************************
  * Manual functions
@@ -258,6 +261,7 @@ volatile float fz;
 #if ACTIVE_DATA_MONITORING
 // monitoring val
 static bool allparameters_monitoring_flag = false;
+static bool data_echo_flag_ = true;
 LoopTimeChecker TimeChecker;
 #endif
 
@@ -337,7 +341,7 @@ void DCMotor::SetAbsolutePosZero()            {this->absolute_position = 0;}
  **********************************/
 void DCMotor::PWMInit()
 {
-  Serial.print("Motor Pin & PWM Initializing...");
+  // Serial.print("Motor Pin & PWM Initializing...");
 
   pinMode(PIN_MOTOR_CW, OUTPUT);
   pinMode(PIN_MOTOR_CCW, OUTPUT);
@@ -355,7 +359,7 @@ void DCMotor::PWMInit()
   pwmtimer2.refresh();
   pwmtimer2.resume();
 
-  Serial.println("DONE");
+  // Serial.println("DONE");
 }
 
 /*********************************
@@ -626,7 +630,7 @@ void isr_encoder_phase_B()
  **********************************/
 void EncoderInit()
 {
-  Serial.print("Encoder interrupter Initializing...");
+  // Serial.print("Encoder interrupter Initializing...");
   pinMode(PIN_ENCODER_PHASE_A, INPUT);
   pinMode(PIN_ENCODER_PAHSE_B, INPUT);
   attachInterrupt(digitalPinToInterrupt(PIN_ENCODER_PHASE_A), isr_encoder_phase_A, CHANGE);
@@ -636,11 +640,11 @@ void EncoderInit()
   GripperMotor.absolute_position = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
 
   delay(100);
-  Serial.print("DONE");
-  Serial.print(" -> EEPROM_pos : ");
-  Serial.print(GripperMotor.absolute_position);
-  Serial.print(" / target Pos : ");
-  Serial.println(TARGET_POS);
+  // Serial.print("DONE");
+  // Serial.print(" -> EEPROM_pos : ");
+  // Serial.print(GripperMotor.absolute_position);
+  // Serial.print(" / target Pos : ");
+  // Serial.println(TARGET_POS);
 }
 
 #if ACTIVE_LOADCELL
@@ -649,7 +653,7 @@ void EncoderInit()
  **********************************/
 uint8_t LoadCellInit()
 {
-  Serial.print("Load Cell Inititializing...");
+  // Serial.print("Load Cell Inititializing...");
 
   LoadCell_1.begin();
   LoadCell_2.begin();
@@ -673,27 +677,27 @@ uint8_t LoadCellInit()
 
   if (LoadCell_1.getTareTimeoutFlag())
   {
-    Serial.print("\n");
-    Serial.println("Timeout, check MCU>HX711 no.1 wiring and pin designations");
+    // Serial.print("\n");
+    // Serial.println("Timeout, check MCU>HX711 no.1 wiring and pin designations");
   }
 
   if (LoadCell_2.getTareTimeoutFlag())
   {
-    Serial.print("\n");
-    Serial.println("Timeout, check MCU>HX711 no.2 wiring and pin designations");
+    // Serial.print("\n");
+    // Serial.println("Timeout, check MCU>HX711 no.2 wiring and pin designations");
   }
 
   if (LoadCell_3.getTareTimeoutFlag())
   {
-    Serial.print("\n");
-    Serial.println("Timeout, check MCU>HX711 no.3 wiring and pin designations");
+    // Serial.print("\n");
+    // Serial.println("Timeout, check MCU>HX711 no.3 wiring and pin designations");
   }
 
   LoadCell_1.setCalFactor(CALIBRATION_VALUE_1); // user set calibration value (float)
   LoadCell_2.setCalFactor(CALIBRATION_VALUE_2); // user set calibration value (float)
   LoadCell_3.setCalFactor(CALIBRATION_VALUE_3); // user set calibration value (float)
 
-  Serial.println("Done");
+  // Serial.println("Done");
   return 1;
 }
 #endif
@@ -801,7 +805,7 @@ void SerialCommandINFO()
 #if ACTIVE_RTOS_THREAD
 uint8_t RTOSInit()
 {
-  Serial.print("RTOS Thread Creating...");
+  // Serial.print("RTOS Thread Creating...");
 
 #if ACTIVE_LOADCELL
   xTaskCreate(LoadCellUpdateNode,
@@ -862,7 +866,7 @@ uint8_t RTOSInit()
               tskIDLE_PRIORITY + 1,
               NULL);
 
-  Serial.println("Done");
+  // Serial.println("Done");
 
   // if vTaskStartScheduler doen't work, under line will be operated.
   vTaskStartScheduler();
@@ -910,7 +914,7 @@ void MotorOperatingNode(void *pvParameters)
 #if ACTIVE_SERIAL_READING
 void SerialReadingNode(void *pvParameters)
 {
-  SerialCommandINFO();
+  // SerialCommandINFO();
 
   while (true)
   {
@@ -956,6 +960,8 @@ void SerialReadingNode(void *pvParameters)
     else if (valid_msg == "NONMONITOR")     allparameters_monitoring_flag = false;
     else if (valid_msg == "N")              allparameters_monitoring_flag = false;
     else if (valid_msg == "I")              SerialCommandINFO();
+    else if (valid_msg == "ECHOON")         data_echo_flag_ = true;
+    else if (valid_msg == "ECHOOFF")        data_echo_flag_ = false;
 
     // Serial.print("Command Message : ");
     // Serial.println(valid_msg);
@@ -975,31 +981,38 @@ void SerialWritingNode(void *pvParameters)
   static unsigned long curt_time = millis();
   static unsigned long prev_time = millis();
   static unsigned long temp_time = 0;
-
+  static unsigned long count_ = 0;
+  const char C_STX = 2;
+  const char C_ETX = 3;
   while (true)
   {
     curt_time = millis();
     temp_time = curt_time - prev_time;
     prev_time = curt_time;
 
-    str_send_buffer += String(GripperMotor.motor_state) + ",";
-    str_send_buffer += String(GripperMotor.op_command) + ",";
-    for (int i = 0; i < NUMBER_OF_LOADCELL_MODULE; i++)
+    if (data_echo_flag_ == true)
     {
-      str_send_buffer += String(g_loadcell_val[i]) + ",";
-    }
-    str_send_buffer += String(GripperMotor.absolute_position);
+      // str_send_buffer += String(C_STX);
+      str_send_buffer += String(GripperMotor.motor_state) + ",";
+      str_send_buffer += String(GripperMotor.op_command) + ",";
+      for (int i = 0; i < NUMBER_OF_LOADCELL_MODULE; i++)
+      {
+        str_send_buffer += String(g_loadcell_val[i]) + ",";
+      }
+      str_send_buffer += String(GripperMotor.absolute_position) + ",";
+      str_send_buffer += String(count_++);
+//      str_send_buffer += String(C_ETX);
 
-    if (xSemaphoreTake(xMutex, (portTickType)10) == true)
-    {
-      Serial.println(str_send_buffer);
-      xSemaphoreGive(xMutex);
+      if (xSemaphoreTake(xMutex, (portTickType)10) == true)
+      {
+        Serial.println(str_send_buffer);
+        xSemaphoreGive(xMutex);
+      }
     }
- 
     str_send_buffer = "";
     TimeChecker.loop_time_checker_SerialWriting = temp_time;
 //    vTaskDelay(((1000 / RTOS_FREQUENCY_SERIALWRITING) - TOTAL_SYSTEM_DELAY) / portTICK_PERIOD_MS);
-    vTaskDelay(((1000 / RTOS_FREQUENCY_SERIALWRITING)) / portTICK_PERIOD_MS);
+    vTaskDelay(((1000 / RTOS_FREQUENCY_SERIALWRITING) - TOTAL_SYSTEM_DELAY) / portTICK_PERIOD_MS);
   }
 }
 #endif
@@ -1084,7 +1097,7 @@ void setup()
   delay(3000);
   Serial.begin(BAUDRATE);
   Serial.setTimeout(1);
-  Serial.println("Initializing...");
+  // Serial.println("Initializing...");
   pinMode(PIN_BOARD_LED, OUTPUT);
 
   if (ACTIVE_MOTOR)
