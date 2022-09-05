@@ -131,6 +131,14 @@
 #define CALIBRATION_VALUE_3              3072.0 // calibration value load cell 3
 #define LOADCELL_HOMING_VALUE            150
 
+#define XY_PLANE_THETA_1                 90
+#define XY_PLANE_THETA_2                 210
+#define XY_PLANE_THETA_3                 -30
+#define XZ_PLANE_THETA_1                 20
+#define XZ_PLANE_THETA_2                 70
+
+#define K_RUBBER                         0.05
+
 /*********************************
  * Setting info
  *********************************/
@@ -247,15 +255,16 @@ DCMotor GripperMotor;
 HX711_ADC LoadCell_1(HX711_DOUT_1, HX711_SCK_1); // HX711 1
 HX711_ADC LoadCell_2(HX711_DOUT_2, HX711_SCK_2); // HX711 2
 HX711_ADC LoadCell_3(HX711_DOUT_3, HX711_SCK_3); // HX711 3
-static float g_loadcell_val[NUMBER_OF_LOADCELL_MODULE] = {0};
+static volatile float g_loadcell_val[NUMBER_OF_LOADCELL_MODULE] = {0};
+static volatile float force_vector[NUMBER_OF_LOADCELL_MODULE][3] = {0};
+static volatile float fx = 0;
+static volatile float fy = 0;
+static volatile float fz = 0;
+static volatile float fz_total = 0;
 
 unsigned long t = 0;
-volatile float f1[3]; //[x1,y1,z1]
-volatile float f2[3]; //[x2,y2,z2]
-volatile float f3[3]; //[x3,y3,z3]
-volatile float fx;
-volatile float fy;
-volatile float fz;
+
+
 #endif
 
 #if ACTIVE_DATA_MONITORING
@@ -915,9 +924,16 @@ void MotorOperatingNode(void *pvParameters)
 void SerialReadingNode(void *pvParameters)
 {
   // SerialCommandINFO();
+  static unsigned long curt_time = millis();
+  static unsigned long prev_time = millis();
+  static unsigned long temp_time = 0;
 
   while (true)
   {
+    curt_time = millis();
+    temp_time = curt_time - prev_time;
+    prev_time = curt_time;
+
     if (Serial.available() <= 0)
       continue;
 
@@ -942,10 +958,10 @@ void SerialReadingNode(void *pvParameters)
     else if (valid_msg == "SETABSZERO")     GripperMotor.absolute_position = 0;
     else if (valid_msg == "ZB")             GripperMotor.absolute_position = 0;
     else if (valid_msg == "RUN")           {GripperMotor.motor_state = kEnable;
-                                            GripperMotor.UpdateVelocity(DUTY_MAX / 10);
+                                            GripperMotor.UpdateVelocity(DUTY_MAX / 50);
                                             }
     else if (valid_msg == "R")             {GripperMotor.motor_state = kEnable;
-                                            GripperMotor.UpdateVelocity(DUTY_MAX / 10);
+                                            GripperMotor.UpdateVelocity(DUTY_MAX / 50);
                                             }
     else if (valid_msg == "STOP")           GripperMotor.Disable();
     else if (valid_msg == "S")              GripperMotor.Disable();
@@ -965,6 +981,7 @@ void SerialReadingNode(void *pvParameters)
 
     // Serial.print("Command Message : ");
     // Serial.println(valid_msg);
+    TimeChecker.loop_time_checker_SerialReading = temp_time;
     vTaskDelay(((1000 / RTOS_FREQUENCY_SERIALREADING)) / portTICK_PERIOD_MS);
   }
 }
@@ -999,6 +1016,10 @@ void SerialWritingNode(void *pvParameters)
       {
         str_send_buffer += String(g_loadcell_val[i]) + ",";
       }
+      str_send_buffer += String(fx) + ",";
+      str_send_buffer += String(fy) + ",";
+      str_send_buffer += String(fz) + ",";
+      str_send_buffer += String(fz_total) + ",";
       str_send_buffer += String(GripperMotor.absolute_position) + ",";
       str_send_buffer += String(count_++);
 //      str_send_buffer += String(C_ETX);
@@ -1061,6 +1082,30 @@ void LoadCellUpdateNode(void *pvParameters)
     g_loadcell_val[0] = LoadCell_1.getData();
     g_loadcell_val[1] = LoadCell_2.getData();
     g_loadcell_val[2] = LoadCell_3.getData();
+
+    force_vector[0][0] = g_loadcell_val[0] * sin(radians(XZ_PLANE_THETA_2)) * cos(radians(XY_PLANE_THETA_2));
+    force_vector[0][1] = g_loadcell_val[0] * sin(radians(XZ_PLANE_THETA_2)) * sin(radians(XY_PLANE_THETA_2));
+    force_vector[0][2] = g_loadcell_val[0] * cos(radians(XZ_PLANE_THETA_1));
+    
+    force_vector[1][0] = g_loadcell_val[1] * sin(radians(XZ_PLANE_THETA_2)) * cos(radians(XY_PLANE_THETA_1));
+    force_vector[1][1] = g_loadcell_val[1] * sin(radians(XZ_PLANE_THETA_2)) * sin(radians(XY_PLANE_THETA_1));
+    force_vector[1][2] = g_loadcell_val[1] * cos(radians(XZ_PLANE_THETA_1));
+
+    force_vector[2][0] = g_loadcell_val[2] * sin(radians(XZ_PLANE_THETA_2)) * cos(radians(XY_PLANE_THETA_3));
+    force_vector[2][1] = g_loadcell_val[2] * sin(radians(XZ_PLANE_THETA_2)) * sin(radians(XY_PLANE_THETA_3));
+    force_vector[2][2] = g_loadcell_val[2] * cos(radians(XZ_PLANE_THETA_1));
+
+    fx = force_vector[0][0] + force_vector[1][0] + force_vector[2][0];
+    fy = force_vector[0][1] + force_vector[1][1] + force_vector[2][1];
+    fz = force_vector[0][2] + force_vector[1][2] + force_vector[2][2];
+    fz_total = (fz/K_RUBBER)/3;
+    
+    // for(i=0; i<NUMBER_OF_LOADCELL_MODULE; i++)
+    // {
+    //     fx += force_vector[i][0];
+    //     fy += force_vector[i][1];
+    //     fz += force_vector[i][2];
+    // }
 
     TimeChecker.loop_time_checker_LoadCellUpdate = temp_time;
     vTaskDelay(((1000 / RTOS_FREQUENCY_LOADCELLUPDATE) - TOTAL_SYSTEM_DELAY) / portTICK_PERIOD_MS);
