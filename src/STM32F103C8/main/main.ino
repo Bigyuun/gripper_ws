@@ -112,8 +112,8 @@
 /*********************************
  * Motor info
  *********************************/
-//#define GEAR_RATIO                       298
-#define GEAR_RATIO                       380
+#define GEAR_RATIO                       298
+// #define GEAR_RATIO                       380
 #define GRIPPER_GEAR_RATIO               3.814814814
 
 /*********************************
@@ -270,7 +270,7 @@ unsigned long t = 0;
 #if ACTIVE_DATA_MONITORING
 // monitoring val
 static bool allparameters_monitoring_flag = false;
-static bool data_echo_flag_ = true;
+static bool data_echo_flag_ = false;
 LoopTimeChecker TimeChecker;
 #endif
 
@@ -794,8 +794,8 @@ void SerialCommandINFO()
 {
   Serial.println("================================ Command Info ======================================");
   Serial.println("[Protocol] : '/' + 'command_message' + ';' ( Example -> /CW; )");
-  Serial.println("CW                  : clockwise");
-  Serial.println("CCW                 : counter clockwise");
+  Serial.println("CW                  : Clockwise");
+  Serial.println("CCW                 : Counter clockwise");
   Serial.println("SETACTZERO     (Z)  : Set Encoder Actual Pos 0 (actual pos only, not absolute pos)");
   Serial.println("SETABSZERO     (ZB) : Set Encoder Absolute Pos 0 (absolute pos only, not actual pos)");
   Serial.println("RUN            (R)  : Move motor depend on user setup direction & speed");
@@ -804,6 +804,8 @@ void SerialCommandINFO()
   Serial.println("LOADCELLHOMING (LH) : Load cell Homing operation (Move until the average of all loadcell value will be user set (default : 150)");
   Serial.println("MONITOR        (M)  : Monitoring values & loop time of each threads");
   Serial.println("NONMONITOR     (N)  : Stop Monitoring");
+  Serial.println("ECHOOFF             : Stop Echo");
+  Serial.println("ECHOON              : Start Echo");
   Serial.println("I                   : Show Command Info");
   Serial.println("====================================================================================");
 }
@@ -958,10 +960,10 @@ void SerialReadingNode(void *pvParameters)
     else if (valid_msg == "SETABSZERO")     GripperMotor.absolute_position = 0;
     else if (valid_msg == "ZB")             GripperMotor.absolute_position = 0;
     else if (valid_msg == "RUN")           {GripperMotor.motor_state = kEnable;
-                                            GripperMotor.UpdateVelocity(DUTY_MAX / 50);
+                                            GripperMotor.UpdateVelocity(DUTY_MAX / 10);
                                             }
     else if (valid_msg == "R")             {GripperMotor.motor_state = kEnable;
-                                            GripperMotor.UpdateVelocity(DUTY_MAX / 50);
+                                            GripperMotor.UpdateVelocity(DUTY_MAX / 10);
                                             }
     else if (valid_msg == "STOP")           GripperMotor.Disable();
     else if (valid_msg == "S")              GripperMotor.Disable();
@@ -992,7 +994,7 @@ void SerialWritingNode(void *pvParameters)
 {
   if (xSemaphoreTake(xMutex, (portTickType)10) == true)
   {
-    Serial.println("/START;");
+    // Serial.println("/START;");
     xSemaphoreGive(xMutex);
   }
   static unsigned long curt_time = millis();
@@ -1079,9 +1081,9 @@ void LoadCellUpdateNode(void *pvParameters)
     LoadCell_1.update();
     LoadCell_2.update();
     LoadCell_3.update();
-    g_loadcell_val[0] = LoadCell_1.getData();
-    g_loadcell_val[1] = LoadCell_2.getData();
-    g_loadcell_val[2] = LoadCell_3.getData();
+    g_loadcell_val[0] = LoadCell_1.getData()/K_RUBBER;
+    g_loadcell_val[1] = LoadCell_2.getData()/K_RUBBER;
+    g_loadcell_val[2] = LoadCell_3.getData()/K_RUBBER;
 
     force_vector[0][0] = g_loadcell_val[0] * sin(radians(XZ_PLANE_THETA_2)) * cos(radians(XY_PLANE_THETA_2));
     force_vector[0][1] = g_loadcell_val[0] * sin(radians(XZ_PLANE_THETA_2)) * sin(radians(XY_PLANE_THETA_2));
@@ -1095,17 +1097,9 @@ void LoadCellUpdateNode(void *pvParameters)
     force_vector[2][1] = g_loadcell_val[2] * sin(radians(XZ_PLANE_THETA_2)) * sin(radians(XY_PLANE_THETA_3));
     force_vector[2][2] = g_loadcell_val[2] * cos(radians(XZ_PLANE_THETA_1));
 
-    fx = force_vector[0][0] + force_vector[1][0] + force_vector[2][0];
-    fy = force_vector[0][1] + force_vector[1][1] + force_vector[2][1];
-    fz = force_vector[0][2] + force_vector[1][2] + force_vector[2][2];
-    fz_total = (fz/K_RUBBER)/3;
-    
-    // for(i=0; i<NUMBER_OF_LOADCELL_MODULE; i++)
-    // {
-    //     fx += force_vector[i][0];
-    //     fy += force_vector[i][1];
-    //     fz += force_vector[i][2];
-    // }
+    fx = (force_vector[0][0] + force_vector[1][0] + force_vector[2][0])/3;
+    fy = (force_vector[0][1] + force_vector[1][1] + force_vector[2][1])/3;
+    fz = (force_vector[0][2] + force_vector[1][2] + force_vector[2][2])/3;
 
     TimeChecker.loop_time_checker_LoadCellUpdate = temp_time;
     vTaskDelay(((1000 / RTOS_FREQUENCY_LOADCELLUPDATE) - TOTAL_SYSTEM_DELAY) / portTICK_PERIOD_MS);
