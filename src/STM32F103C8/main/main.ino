@@ -126,9 +126,9 @@
 /*********************************
  * Load Cell info
  *********************************/
-#define CALIBRATION_VALUE_1              2935.8 // calibration value load cell 1
-#define CALIBRATION_VALUE_2              2987.0 // calibration value load cell 2
-#define CALIBRATION_VALUE_3              3072.0 // calibration value load cell 3
+#define CALIBRATION_VALUE_1              2942.0 // calibration value load cell 1
+#define CALIBRATION_VALUE_2              3069.0 // calibration value load cell 2
+#define CALIBRATION_VALUE_3              2991.0 // calibration value load cell 3
 #define LOADCELL_HOMING_VALUE            150
 
 #define XY_PLANE_THETA_1                 90
@@ -936,8 +936,8 @@ void SerialReadingNode(void *pvParameters)
     else if (valid_msg == "CCW")            {PrintOnMutex("/CCW 1;"); GripperMotor.SetDirCCW(); PrintOnMutex("/CCW 0;");}
     else if (valid_msg == "SETACTZERO")     {PrintOnMutex("/SETACTZERO 1;"); GripperMotor.SetActualPosZero(); PrintOnMutex("/SETACTZERO 0;");}
     else if (valid_msg == "Z")              {PrintOnMutex("/SETACTZERO 1;"); GripperMotor.SetActualPosZero(); PrintOnMutex("/SETACTZERO 0;");}
-    else if (valid_msg == "SETABSZERO")     {PrintOnMutex("/SETABSZERO 1;"); GripperMotor.SetActualPosZero(); PrintOnMutex("/SETABSZERO 0;");}
-    else if (valid_msg == "ZB")             {PrintOnMutex("/SETABSZERO 1;"); GripperMotor.SetActualPosZero(); PrintOnMutex("/SETABSZERO 0;");}
+    else if (valid_msg == "SETABSZERO")     {PrintOnMutex("/SETABSZERO 1;"); GripperMotor.SetAbsolutePosZero(); PrintOnMutex("/SETABSZERO 0;");}
+    else if (valid_msg == "ZB")             {PrintOnMutex("/SETABSZERO 1;"); GripperMotor.SetAbsolutePosZero(); PrintOnMutex("/SETABSZERO 0;");}
     else if (valid_msg == "RUN")           {PrintOnMutex("/RUN 1;");
                                             GripperMotor.motor_state = kEnable;
                                             GripperMotor.UpdateVelocity(DUTY_MAX / 10);
