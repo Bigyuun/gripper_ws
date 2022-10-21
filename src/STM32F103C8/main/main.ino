@@ -166,6 +166,10 @@ void EEPROMSaveNode();
 void LoadCellUpdateNode();
 void MonitorAllParametersNode();
 void SerialCommunicationNode();
+
+// Mutex Function (Lock, Unlock);
+void PrintOnMutex(String msg);
+
 static void LEDIndicator();
 
 struct LoopTimeChecker
@@ -296,24 +300,30 @@ void DCMotor::Enable()
 }
 void DCMotor::Disable()
 {
+  // PrintOnMutex("/STOP 1;");
   this->motor_state = kDisable;
   this->op_command = kNone;
   this->direction = kNoneDir;
   digitalWrite(PIN_MOTOR_CW, LOW);
   digitalWrite(PIN_MOTOR_CCW, LOW);
   pwmWrite(PIN_MOTOR_PWM, DUTY_MIN);
+  // PrintOnMutex("/STOP 0;");
 }
 void DCMotor::SetDirCW()
 {
+  // PrintOnMutex("/CW 1;");
   this->direction = kClockwise;
   digitalWrite(PIN_MOTOR_CW, HIGH);
   digitalWrite(PIN_MOTOR_CCW, LOW);
+  // PrintOnMutex("/CW 0;");
 }
 void DCMotor::SetDirCCW()
 {
+  // PrintOnMutex("/CCW 1");
   this->direction = kCounterClockwise;
   digitalWrite(PIN_MOTOR_CW, LOW);
   digitalWrite(PIN_MOTOR_CCW, HIGH);
+  // PrintOnMutex("/CCW 0");
 }
 void DCMotor::SetDirOFF()
 {
@@ -380,11 +390,6 @@ uint8_t DCMotor::Homing(uint16_t threshold)
   if (this->absolute_position <= threshold && this->absolute_position >= -threshold)
   {
     this->Disable();
-     if (xSemaphoreTake(xMutex, (portTickType)10) == true)
-     {
-      Serial.println("/END;");
-       xSemaphoreGive(xMutex);
-     }
     return 1;
   }
 
@@ -408,29 +413,18 @@ uint8_t DCMotor::Homing(uint16_t threshold)
       if ((this->absolute_position <= threshold) && (this->absolute_position >= -threshold))
       {
         this->Disable();
-        if (xSemaphoreTake(xMutex, (portTickType)10) == true)
-        {
-          Serial.println("/END;");
-          xSemaphoreGive(xMutex);
-          return 1;
-        }
+        return 1;
       }
     }
     else
     {
       this->Disable();
-      if (xSemaphoreTake(xMutex, (portTickType)10) == true)
-      {
-        Serial.println("/FAIL;");
-        xSemaphoreGive(xMutex);
-      }
       return 0;
     }
 
     // Never delete -> if you delete this delay, then the operation will be make problem
     vTaskDelay((1) / portTICK_PERIOD_MS);
   }
-
   return 1;
 }
 
@@ -457,11 +451,6 @@ uint8_t DCMotor::HomingLoadCell(float target_force)
       {
         this->actual_position = 0;
         this->Disable();
-        if (xSemaphoreTake(xMutex, (portTickType)10) == true)
-        {
-          Serial.println("/END;");
-          xSemaphoreGive(xMutex);
-        }
         return 1;
       }
       else
@@ -474,11 +463,6 @@ uint8_t DCMotor::HomingLoadCell(float target_force)
     else
     {
       this->Disable();
-      if (xSemaphoreTake(xMutex, (portTickType)10) == true)
-      {
-        Serial.println("/FAIL;");
-        xSemaphoreGive(xMutex);
-      }
       return 0;
     }
 
@@ -517,11 +501,6 @@ uint8_t DCMotor::MoveRevolution(long target_rev)
         if (this->absolute_position >= this->target_position)
         {
           this->Disable();
-          if(xSemaphoreTake(xMutex, (portTickType)10 ) == true)
-          {
-            Serial.println("/END;");
-            xSemaphoreGive(xMutex);
-          }
           return 1;
         }
       }
@@ -530,11 +509,6 @@ uint8_t DCMotor::MoveRevolution(long target_rev)
         if (this->absolute_position <= this->target_position)
         {
           this->Disable();
-          if(xSemaphoreTake(xMutex, (portTickType)10 ) == true)
-          {
-            Serial.println("/END;");
-            xSemaphoreGive(xMutex);
-          }
           return 1;
         }
       }
@@ -542,11 +516,6 @@ uint8_t DCMotor::MoveRevolution(long target_rev)
     else
     {
       this->Disable();
-      if (xSemaphoreTake(xMutex, (portTickType)10) == true)
-      {
-        Serial.println("/FAIL;");
-        xSemaphoreGive(xMutex);
-      }
       return 0;
     }
 
@@ -800,6 +769,7 @@ void SerialCommandINFO()
   Serial.println("SETABSZERO     (ZB) : Set Encoder Absolute Pos 0 (absolute pos only, not actual pos)");
   Serial.println("RUN            (R)  : Move motor depend on user setup direction & speed");
   Serial.println("STOP           (S)  : Stop motor");
+  Serial.println("REVOLUTION     (O)  : Move motor 1 rev");
   Serial.println("HOMING         (H)  : Motor Homing operation (Move until the absolute pos will be 0)");
   Serial.println("LOADCELLHOMING (LH) : Load cell Homing operation (Move until the average of all loadcell value will be user set (default : 150)");
   Serial.println("MONITOR        (M)  : Monitoring values & loop time of each threads");
@@ -837,8 +807,8 @@ uint8_t RTOSInit()
 #endif
 
 #if ACTIVE_SERIAL_WRITING
-  xTaskCreate(SerialWritingNode,
-              "SerialWritingNode",
+  xTaskCreate(EchoNode,
+              "EchoNode",
               384,
               NULL,
               tskIDLE_PRIORITY + 1,
@@ -910,9 +880,18 @@ void MotorOperatingNode(void *pvParameters)
     temp_time = curt_time - prev_time;
     prev_time = curt_time;
 
-    if      (GripperMotor.op_command == kHoming)          GripperMotor.Homing(HOMING_THRESHOLD);
-    else if (GripperMotor.op_command == kHomingLoadcell)  GripperMotor.HomingLoadCell(LOADCELL_HOMING_VALUE);
-    else if (GripperMotor.op_command == kRevolution)      GripperMotor.MoveRevolution(TARGET_REVOLTION);
+    if      (GripperMotor.op_command == kHoming)          {PrintOnMutex("/HOMING 1;");
+                                                           GripperMotor.Homing(HOMING_THRESHOLD); 
+                                                           PrintOnMutex("/HOMING 0;");
+                                                           }
+    else if (GripperMotor.op_command == kHomingLoadcell)  {PrintOnMutex("/HOMINGLOADCELL 1;");
+                                                           GripperMotor.HomingLoadCell(LOADCELL_HOMING_VALUE);
+                                                           PrintOnMutex("/HOMINGLOADCELL 0;");
+                                                           }
+    else if (GripperMotor.op_command == kRevolution)      {PrintOnMutex("/REVOLUTION 1;");
+                                                           GripperMotor.MoveRevolution(TARGET_REVOLTION);
+                                                           PrintOnMutex("/REVOLUTION 0;");
+                                                           }
 
     TimeChecker.loop_time_checker_MotorOperation = temp_time;
     vTaskDelay(((1000 / RTOS_FREQUENCY_MOTOR_OPERATION) - TOTAL_SYSTEM_DELAY) / portTICK_PERIOD_MS);
@@ -953,33 +932,37 @@ void SerialReadingNode(void *pvParameters)
     String valid_msg = str_recv_buffer.substring(ipos0 + 1, ipos1);
     str_recv_buffer = "";
 
-    if (valid_msg == "CW")                  GripperMotor.SetDirCW();
-    else if (valid_msg == "CCW")            GripperMotor.SetDirCCW();
-    else if (valid_msg == "SETACTZERO")     GripperMotor.actual_position = 0;
-    else if (valid_msg == "Z")              GripperMotor.actual_position = 0;
-    else if (valid_msg == "SETABSZERO")     GripperMotor.absolute_position = 0;
-    else if (valid_msg == "ZB")             GripperMotor.absolute_position = 0;
-    else if (valid_msg == "RUN")           {GripperMotor.motor_state = kEnable;
+    if (valid_msg == "CW")                  {PrintOnMutex("/CW 1;"); GripperMotor.SetDirCW(); PrintOnMutex("/CW 0;");}
+    else if (valid_msg == "CCW")            {PrintOnMutex("/CCW 1;"); GripperMotor.SetDirCCW(); PrintOnMutex("/CCW 0;");}
+    else if (valid_msg == "SETACTZERO")     {PrintOnMutex("/SETACTZERO 1;"); GripperMotor.SetActualPosZero(); PrintOnMutex("/SETACTZERO 0;");}
+    else if (valid_msg == "Z")              {PrintOnMutex("/SETACTZERO 1;"); GripperMotor.SetActualPosZero(); PrintOnMutex("/SETACTZERO 0;");}
+    else if (valid_msg == "SETABSZERO")     {PrintOnMutex("/SETABSZERO 1;"); GripperMotor.SetActualPosZero(); PrintOnMutex("/SETABSZERO 0;");}
+    else if (valid_msg == "ZB")             {PrintOnMutex("/SETABSZERO 1;"); GripperMotor.SetActualPosZero(); PrintOnMutex("/SETABSZERO 0;");}
+    else if (valid_msg == "RUN")           {PrintOnMutex("/RUN 1;");
+                                            GripperMotor.motor_state = kEnable;
                                             GripperMotor.UpdateVelocity(DUTY_MAX / 10);
+                                            PrintOnMutex("/RUN 0;");
                                             }
-    else if (valid_msg == "R")             {GripperMotor.motor_state = kEnable;
+    else if (valid_msg == "R")             {PrintOnMutex("/RUN 1;");
+                                            GripperMotor.motor_state = kEnable;
                                             GripperMotor.UpdateVelocity(DUTY_MAX / 10);
+                                            PrintOnMutex("/RUN 0;");
                                             }
-    else if (valid_msg == "STOP")           GripperMotor.Disable();
-    else if (valid_msg == "S")              GripperMotor.Disable();
+    else if (valid_msg == "STOP")           {PrintOnMutex("/STOP 1;"); GripperMotor.Disable(); PrintOnMutex("/STOP 0;");}
+    else if (valid_msg == "S")              {PrintOnMutex("/STOP 1;"); GripperMotor.Disable(); PrintOnMutex("/STOP 0;");}
     else if (valid_msg == "HOMING")         GripperMotor.op_command = kHoming;
     else if (valid_msg == "H")              GripperMotor.op_command = kHoming;
-    else if (valid_msg == "LOADCELLHOMING") GripperMotor.op_command = kHomingLoadcell;
-    else if (valid_msg == "LH")             GripperMotor.op_command = kHomingLoadcell;
+    else if (valid_msg == "HOMINGLOADCELL") GripperMotor.op_command = kHomingLoadcell;
+    else if (valid_msg == "HL")             GripperMotor.op_command = kHomingLoadcell;
     else if (valid_msg == "REVOLUTION")     GripperMotor.op_command = kRevolution;
     else if (valid_msg == "O")              GripperMotor.op_command = kRevolution;
-    else if (valid_msg == "MONITOR")        allparameters_monitoring_flag = true;
-    else if (valid_msg == "M")              allparameters_monitoring_flag = true;
-    else if (valid_msg == "NONMONITOR")     allparameters_monitoring_flag = false;
-    else if (valid_msg == "N")              allparameters_monitoring_flag = false;
+    else if (valid_msg == "MONITOR")        {PrintOnMutex("/MONITOR 1;"); allparameters_monitoring_flag = true; PrintOnMutex("/MONITOR 0");}
+    else if (valid_msg == "M")              {PrintOnMutex("/MONITOR 1;"); allparameters_monitoring_flag = true; PrintOnMutex("/MONITOR 0");}
+    else if (valid_msg == "NONMONITOR")     {PrintOnMutex("/NONMONITOR 1;"); allparameters_monitoring_flag = false; PrintOnMutex("/NONMONITOR 0;");}
+    else if (valid_msg == "N")              {PrintOnMutex("/NONMONITOR 1;"); allparameters_monitoring_flag = false; PrintOnMutex("/NONMONITOR 0;");}
     else if (valid_msg == "I")              SerialCommandINFO();
-    else if (valid_msg == "ECHOON")         data_echo_flag_ = true;
-    else if (valid_msg == "ECHOOFF")        data_echo_flag_ = false;
+    else if (valid_msg == "ECHOON")         {PrintOnMutex("/ECHOON 1;"); data_echo_flag_ = true; PrintOnMutex("/ECHOON 0;");}
+    else if (valid_msg == "ECHOOFF")        {PrintOnMutex("/ECHOOFF 1;"); data_echo_flag_ = false; PrintOnMutex("/ECHOOFF 0;");}
 
     // Serial.print("Command Message : ");
     // Serial.println(valid_msg);
@@ -990,13 +973,8 @@ void SerialReadingNode(void *pvParameters)
 #endif
 
 #if ACTIVE_SERIAL_WRITING
-void SerialWritingNode(void *pvParameters)
+void EchoNode(void *pvParameters)
 {
-  if (xSemaphoreTake(xMutex, (portTickType)10) == true)
-  {
-    // Serial.println("/START;");
-    xSemaphoreGive(xMutex);
-  }
   static unsigned long curt_time = millis();
   static unsigned long prev_time = millis();
   static unsigned long temp_time = 0;
@@ -1023,7 +1001,7 @@ void SerialWritingNode(void *pvParameters)
       str_send_buffer += String(fz) + ",";
       str_send_buffer += String(fz_total) + ",";
       str_send_buffer += String(GripperMotor.absolute_position) + ",";
-      str_send_buffer += String(count_++);
+      // str_send_buffer += String(count_++);
 //      str_send_buffer += String(C_ETX);
 
       if (xSemaphoreTake(xMutex, (portTickType)10) == true)
@@ -1106,6 +1084,20 @@ void LoadCellUpdateNode(void *pvParameters)
   }
 }
 #endif
+
+/*********************************
+ * Serial Print using Mutex
+ **********************************/
+void PrintOnMutex(String msg)
+{
+  if(xSemaphoreTake(xMutex, (portTickType)10 ) == true)
+  {
+    Serial.println(msg);
+    xSemaphoreGive(xMutex);
+  }
+}
+
+
 
 /*********************************
  * Indicator for operating successfully
