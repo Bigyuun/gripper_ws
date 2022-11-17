@@ -292,8 +292,13 @@ xSemaphoreHandle xMutex;
 //==================================================================================================
 DCMotor::DCMotor()
 {
-  anchor = this;
+  
 }
+DCMotor::~DCMotor()
+{
+  
+}
+
 void DCMotor::Enable()
 {
   this->motor_state = kEnable;
@@ -616,7 +621,7 @@ void EncoderInit()
 
   GripperMotor.absolute_position = 0;
   GripperMotor.absolute_position = EEPROMReadlong(ENCODER_POS_EEPROM_ADDRESS);
-
+  Serial.print("abs pos : ");Serial.println(GripperMotor.absolute_position);
   delay(100);
   // Serial.print("DONE");
   // Serial.print(" -> EEPROM_pos : ");
