@@ -113,7 +113,6 @@
  * Motor info
  *********************************/
 #define GEAR_RATIO                       298
-// #define GEAR_RATIO                       380
 #define GRIPPER_GEAR_RATIO               3.814814814
 
 /*********************************
@@ -143,10 +142,10 @@
  * Setting info
  *********************************/
 #define TARGET_REVOLTION                 1
-//#define TARGET_POS                      (GEAR_RATIO * ENCODER_RESOLUTION * 4 * GRIPPER_GEAR_RATIO * TARGET_REVOLTION)
-#define TARGET_POS                      (GEAR_RATIO * ENCODER_RESOLUTION * 4 * TARGET_REVOLTION)
-//#define ONE_REVOLUTION                  (GEAR_RATIO * ENCODER_RESOLUTION * 4 * GRIPPER_GEAR_RATIO)
-#define ONE_REVOLUTION                  (GEAR_RATIO * ENCODER_RESOLUTION * 4)
+#define TARGET_POS                      (GEAR_RATIO * ENCODER_RESOLUTION * 4 * GRIPPER_GEAR_RATIO * TARGET_REVOLTION)
+// #define TARGET_POS                      (GEAR_RATIO * ENCODER_RESOLUTION * 4 * TARGET_REVOLTION)
+#define ONE_REVOLUTION                  (GEAR_RATIO * ENCODER_RESOLUTION * 4 * GRIPPER_GEAR_RATIO)
+// #define ONE_REVOLUTION                  (GEAR_RATIO * ENCODER_RESOLUTION * 4)
 
 /*********************************
  * Manual functions
