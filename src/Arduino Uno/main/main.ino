@@ -1,7 +1,7 @@
 
 /******************************************************************************************
  * Project : gripper_ws :: main
- * -Git test.. 2022.11.21.
+ * -Git test.. 2022.11.21. -- global set
  * @file main.ino
  * @author Dae-Yun Jang (bigyun9375@gmail.com)
  * @git  https://github.com/Bigyuun/gripper_ws
