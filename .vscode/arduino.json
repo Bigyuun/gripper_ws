@@ -1,5 +1,5 @@
 {
-    "sketch": "src\\main\\main.ino",
+    "sketch": "src\\STM32F103C8\\main\\main.ino",
     "board": "stm32duino:STM32F1:genericSTM32F103C",
     "port": "COM5",
     "programmer": "arduino:avrispmkii",
