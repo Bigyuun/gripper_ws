@@ -121,6 +121,7 @@
 #define ENCODER_POS_EEPROM_ADDRESS       0
 #define ENCODER_RESOLUTION               7
 #define HOMING_THRESHOLD                 150
+#define DEFUALT_THRESHOLD                150
 
 /*********************************
  * Load Cell info
@@ -237,6 +238,9 @@ public:
   uint8_t Homing(uint16_t threshold);
   uint8_t HomingLoadCell(float target_force);
   uint8_t MoveRevolution(long target_rev);
+
+
+  uint8_t MoveTargetPos(float target_angle);
 };
 
 /************************************************************************************************************
@@ -523,6 +527,55 @@ uint8_t DCMotor::MoveRevolution(long target_rev)
       return 0;
     }
 
+    // Never delete -> if you delete this delay, then the operation will be make problem
+    vTaskDelay((1) / portTICK_PERIOD_MS);
+  }
+  return 0;
+}
+
+/***
+ * @date 2023-04-27
+ * @brief Moving gear to input angle. (type : degree)
+*/
+uint8_t DCMotor::MoveTargetPos(float target_angle){
+
+  float target_pos = ONE_REVOLUTION * target_angle/360;
+  this->UpdateTargetPosition((long)target_pos);
+
+  if ( this->absolute_position <= target_pos + DEFUALT_THRESHOLD && this->absolute_position >= target_pos - DEFUALT_THRESHOLD ) {
+    this->Disable();
+    return 1;
+  }
+
+  if ( this->absolute_position > target_pos ) {
+    this->SetDirCCW();
+    this->UpdateVelocity(DUTY_MAX / 10);
+    this->Enable();
+  }
+  else if ( this->absolute_position < target_pos) {
+    this->SetDirCW();
+    this->UpdateVelocity(DUTY_MAX / 10);
+    this->Enable();
+  }
+
+  while(true) {
+    if (this->motor_state == kEnable) {
+      if (this->direction == kClockwise) {
+        if (this->absolute_position >= this->target_position-DEFUALT_THRESHOLD) {
+          this->Disable();
+          return 1;
+        }
+      }
+      else if (this->direction == kCounterClockwise) {
+        if (this->absolute_position <= this->target_position+DEFUALT_THRESHOLD) {
+          this->Disable();
+          return 1;
+        }
+      }
+    } else {
+      this->Disable();
+      return 0;
+    }
     // Never delete -> if you delete this delay, then the operation will be make problem
     vTaskDelay((1) / portTICK_PERIOD_MS);
   }
