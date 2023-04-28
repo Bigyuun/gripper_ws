@@ -161,6 +161,8 @@ void isr_encoder_phase_A();
 void isr_encoder_phase_B();
 void EncoderInit();
 
+float parsing_pos(String str);
+
 // RTOS Thread Functions
 void EEPROMSaveNode();
 void LoadCellUpdateNode();
@@ -827,6 +829,7 @@ void SerialCommandINFO()
   Serial.println("RUN            (R)  : Move motor depend on user setup direction & speed");
   Serial.println("STOP           (S)  : Stop motor");
   Serial.println("REVOLUTION     (O)  : Move motor 1 rev");
+  Serial.println("MOVE TARGETPOS (P)  : Move to target pose (degree)");
   Serial.println("HOMING         (H)  : Motor Homing operation (Move until the absolute pos will be 0)");
   Serial.println("LOADCELLHOMING (LH) : Load cell Homing operation (Move until the average of all loadcell value will be user set (default : 150)");
   Serial.println("MONITOR        (M)  : Monitoring values & loop time of each threads");
@@ -835,6 +838,15 @@ void SerialCommandINFO()
   Serial.println("ECHOON              : Start Echo");
   Serial.println("I                   : Show Command Info");
   Serial.println("====================================================================================");
+}
+
+/*********************************
+ * Serial Data Parsing
+ **********************************/
+float parsing_pos(String str){
+  // str[0] is must 'P'
+  float pos = str.substring(1, str.length()-1).toFloat();
+  return pos;
 }
 
 /*********************************
@@ -1013,6 +1025,7 @@ void SerialReadingNode(void *pvParameters)
     else if (valid_msg == "HL")             GripperMotor.op_command = kHomingLoadcell;
     else if (valid_msg == "REVOLUTION")     GripperMotor.op_command = kRevolution;
     else if (valid_msg == "O")              GripperMotor.op_command = kRevolution;
+    else if (valid_msg[0] == 'P')           GripperMotor.MoveTargetPos(parsing_pos(valid_msg));
     else if (valid_msg == "MONITOR")        {PrintOnMutex("/MONITOR 1;"); allparameters_monitoring_flag = true; PrintOnMutex("/MONITOR 0");}
     else if (valid_msg == "M")              {PrintOnMutex("/MONITOR 1;"); allparameters_monitoring_flag = true; PrintOnMutex("/MONITOR 0");}
     else if (valid_msg == "NONMONITOR")     {PrintOnMutex("/NONMONITOR 1;"); allparameters_monitoring_flag = false; PrintOnMutex("/NONMONITOR 0;");}
