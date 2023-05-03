@@ -845,7 +845,7 @@ void SerialCommandINFO()
  **********************************/
 float parsing_pos(String str){
   // str[0] is must 'P'
-  float pos = str.substring(1, str.length()-1).toFloat();
+  float pos = str.substring(1, str.length()).toFloat();
   return pos;
 }
 
@@ -1025,7 +1025,7 @@ void SerialReadingNode(void *pvParameters)
     else if (valid_msg == "HL")             GripperMotor.op_command = kHomingLoadcell;
     else if (valid_msg == "REVOLUTION")     GripperMotor.op_command = kRevolution;
     else if (valid_msg == "O")              GripperMotor.op_command = kRevolution;
-    else if (valid_msg[0] == 'P')           GripperMotor.MoveTargetPos(parsing_pos(valid_msg));
+    else if (valid_msg[0] == 'P')           {PrintOnMutex("/P 1;");GripperMotor.MoveTargetPos(parsing_pos(valid_msg));PrintOnMutex("/P 0;")}
     else if (valid_msg == "MONITOR")        {PrintOnMutex("/MONITOR 1;"); allparameters_monitoring_flag = true; PrintOnMutex("/MONITOR 0");}
     else if (valid_msg == "M")              {PrintOnMutex("/MONITOR 1;"); allparameters_monitoring_flag = true; PrintOnMutex("/MONITOR 0");}
     else if (valid_msg == "NONMONITOR")     {PrintOnMutex("/NONMONITOR 1;"); allparameters_monitoring_flag = false; PrintOnMutex("/NONMONITOR 0;");}
