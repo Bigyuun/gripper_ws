@@ -205,6 +205,7 @@ enum MotorCommand
   kHoming = 1,
   kHomingLoadcell,
   kRevolution,
+  kPosMove
 };
 class DCMotor
 {
@@ -222,6 +223,7 @@ public:
   long difference_position = 0;
   double target_velocity = 0;
   long target_position = 0;
+  float target_Euler_position = 0;
 
 public:
   DCMotor();
@@ -242,7 +244,7 @@ public:
   uint8_t MoveRevolution(long target_rev);
 
 
-  uint8_t MoveTargetPos(float target_angle);
+  uint8_t MoveTargetPos();
 };
 
 /************************************************************************************************************
@@ -539,22 +541,22 @@ uint8_t DCMotor::MoveRevolution(long target_rev)
  * @date 2023-04-27
  * @brief Moving gear to input angle. (type : degree)
 */
-uint8_t DCMotor::MoveTargetPos(float target_angle){
+uint8_t DCMotor::MoveTargetPos(){
 
-  float target_pos = ONE_REVOLUTION * target_angle/360;
+  float target_pos = ONE_REVOLUTION * this->target_Euler_position/360;
   this->UpdateTargetPosition((long)target_pos);
 
-  if ( this->absolute_position <= target_pos + DEFUALT_THRESHOLD && this->absolute_position >= target_pos - DEFUALT_THRESHOLD ) {
+  if ( this->absolute_position <= this->target_position + DEFUALT_THRESHOLD && this->absolute_position >= this->target_position - DEFUALT_THRESHOLD ) {
     this->Disable();
     return 1;
   }
 
-  if ( this->absolute_position > target_pos ) {
+  if ( this->absolute_position > this->target_position ) {
     this->SetDirCCW();
     this->UpdateVelocity(DUTY_MAX / 10);
     this->Enable();
   }
-  else if ( this->absolute_position < target_pos) {
+  else if ( this->absolute_position < this->target_position) {
     this->SetDirCW();
     this->UpdateVelocity(DUTY_MAX / 10);
     this->Enable();
@@ -961,6 +963,11 @@ void MotorOperatingNode(void *pvParameters)
                                                            GripperMotor.MoveRevolution(TARGET_REVOLTION);
                                                            PrintOnMutex("/REVOLUTION 0;");
                                                            }
+    else if (GripperMotor.op_command == kPosMove)         {PrintOnMutex("/POSMOVE 1;");
+                                                           GripperMotor.MoveTargetPos();
+                                                           PrintOnMutex("/POSMOVE o;"); 
+                                                           }
+    
 
     TimeChecker.loop_time_checker_MotorOperation = temp_time;
     vTaskDelay(((1000 / RTOS_FREQUENCY_MOTOR_OPERATION) - TOTAL_SYSTEM_DELAY) / portTICK_PERIOD_MS);
@@ -986,7 +993,7 @@ void SerialReadingNode(void *pvParameters)
 
     if (Serial.available() <= 0)
       continue;
-
+    
     // received messages update
     str_recv_buffer += Serial.readString();
     // find '/'
@@ -1025,7 +1032,10 @@ void SerialReadingNode(void *pvParameters)
     else if (valid_msg == "HL")             GripperMotor.op_command = kHomingLoadcell;
     else if (valid_msg == "REVOLUTION")     GripperMotor.op_command = kRevolution;
     else if (valid_msg == "O")              GripperMotor.op_command = kRevolution;
-    else if (valid_msg[0] == 'P')           {PrintOnMutex("/P 1;");GripperMotor.MoveTargetPos(parsing_pos(valid_msg));PrintOnMutex("/P 0;")}
+    // else if (valid_msg[0] == 'P')           {PrintOnMutex("/P 1;");GripperMotor.MoveTargetPos(parsing_pos(valid_msg));PrintOnMutex("/P 0;")}
+    else if (valid_msg[0] == 'P')           {GripperMotor.target_Euler_position = parsing_pos(valid_msg);
+                                             GripperMotor.op_command = kPosMove;
+                                             }
     else if (valid_msg == "MONITOR")        {PrintOnMutex("/MONITOR 1;"); allparameters_monitoring_flag = true; PrintOnMutex("/MONITOR 0");}
     else if (valid_msg == "M")              {PrintOnMutex("/MONITOR 1;"); allparameters_monitoring_flag = true; PrintOnMutex("/MONITOR 0");}
     else if (valid_msg == "NONMONITOR")     {PrintOnMutex("/NONMONITOR 1;"); allparameters_monitoring_flag = false; PrintOnMutex("/NONMONITOR 0;");}
