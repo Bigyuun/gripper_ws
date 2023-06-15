@@ -1032,14 +1032,10 @@ void SerialReadingNode(void *pvParameters)
     else if (valid_msg == "HL")             GripperMotor.op_command = kHomingLoadcell;
     else if (valid_msg == "REVOLUTION")     GripperMotor.op_command = kRevolution;
     else if (valid_msg == "O")              GripperMotor.op_command = kRevolution;
-<<<<<<< HEAD
     // else if (valid_msg[0] == 'P')           {PrintOnMutex("/P 1;");GripperMotor.MoveTargetPos(parsing_pos(valid_msg));PrintOnMutex("/P 0;")}
     else if (valid_msg[0] == 'P')           {GripperMotor.target_Euler_position = parsing_pos(valid_msg);
                                              GripperMotor.op_command = kPosMove;
                                              }
-=======
-    else if (valid_msg[0] == 'P')           {PrintOnMutex("/P 1;");GripperMotor.MoveTargetPos(parsing_pos(valid_msg));PrintOnMutex("/P 0;");}
->>>>>>> 2b345dfb96274fc6e22373fc2749fb6e047bc2df
     else if (valid_msg == "MONITOR")        {PrintOnMutex("/MONITOR 1;"); allparameters_monitoring_flag = true; PrintOnMutex("/MONITOR 0");}
     else if (valid_msg == "M")              {PrintOnMutex("/MONITOR 1;"); allparameters_monitoring_flag = true; PrintOnMutex("/MONITOR 0");}
     else if (valid_msg == "NONMONITOR")     {PrintOnMutex("/NONMONITOR 1;"); allparameters_monitoring_flag = false; PrintOnMutex("/NONMONITOR 0;");}
