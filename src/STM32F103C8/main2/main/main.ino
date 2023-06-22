@@ -97,8 +97,8 @@
 // Motor Conrol pin            
 #define PIN_MOTOR_PWM                    PA2
 #define PIN_MOTOR_CCW                    PA3
-#define PIN_MOTOR_CW                     PA4  // DMC-16 doesn't use it
-#define PIN_MOTOR_ENABLE                 PA5
+#define PIN_MOTOR_CW                     PA5  // DMC-16 doesn't use it
+#define PIN_MOTOR_ENABLE                 PA4
 
 // Load Cell pin             
 #define HX711_DOUT_1                     PB4 // mcu > HX711 no 1 dout pin
@@ -115,16 +115,16 @@
 /*********************************
  * Motor info
  *********************************/
-#define GEAR_RATIO                       298
-#define GRIPPER_GEAR_RATIO               3.814814814
+#define GEAR_RATIO                       603
+#define GRIPPER_GEAR_RATIO               3
 
 /*********************************
  * Encoder info
  *********************************/
 #define ENCODER_POS_EEPROM_ADDRESS       0
 #define ENCODER_RESOLUTION               7
-#define HOMING_THRESHOLD                 150
-#define DEFUALT_THRESHOLD                150
+#define HOMING_THRESHOLD                 600
+#define DEFUALT_THRESHOLD                600
 
 /*********************************
  * Load Cell info
@@ -312,6 +312,7 @@ DCMotor::~DCMotor()
 void DCMotor::Enable()
 {
   this->motor_state = kEnable;
+  digitalWrite(PIN_MOTOR_ENABLE, HIGH);
 }
 void DCMotor::Disable()
 {
@@ -1033,12 +1034,12 @@ void SerialReadingNode(void *pvParameters)
     else if (valid_msg == "SETABSZERO")     {PrintOnMutex("/SETABSZERO 1;"); GripperMotor.SetAbsolutePosZero(); PrintOnMutex("/SETABSZERO 0;");}
     else if (valid_msg == "ZB")             {PrintOnMutex("/SETABSZERO 1;"); GripperMotor.SetAbsolutePosZero(); PrintOnMutex("/SETABSZERO 0;");}
     else if (valid_msg == "RUN")           {PrintOnMutex("/RUN 1;");
-                                            GripperMotor.motor_state = kEnable;
+                                            GripperMotor.Enable();
                                             GripperMotor.UpdateVelocity(DUTY_MAX / 10);
                                             PrintOnMutex("/RUN 0;");
                                             }
     else if (valid_msg == "R")             {PrintOnMutex("/RUN 1;");
-                                            GripperMotor.motor_state = kEnable;
+                                            GripperMotor.Enable();
                                             GripperMotor.UpdateVelocity(DUTY_MAX / 10);
                                             PrintOnMutex("/RUN 0;");
                                             }
