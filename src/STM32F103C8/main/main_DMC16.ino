@@ -322,7 +322,7 @@ void DCMotor::Disable()
   digitalWrite(PIN_MOTOR_ENABLE, LOW);
   digitalWrite(PIN_MOTOR_CCW, LOW);
   pwmWrite(PIN_MOTOR_PWM, DUTY_MIN);
-  #elif
+  #else if
   this->motor_state = kDisable;
   this->op_command = kNone;
   this->direction = kNoneDir;
@@ -336,7 +336,7 @@ void DCMotor::SetDirCW()
   #if MOTOR_DRIVER
   this->direction = kClockwise;
   digitalWrite(PIN_MOTOR_CCW, LOW);
-  #elif
+  #else if
   this->direction = kClockwise;
   digitalWrite(PIN_MOTOR_CW, HIGH);
   digitalWrite(PIN_MOTOR_CCW, LOW);
@@ -347,7 +347,7 @@ void DCMotor::SetDirCCW()
   #if MOTOR_DRIVER
   this->direction = kCounterClockwise;
   digitalWrite(PIN_MOTOR_CCW, HIGH);
-  #elif
+  #else if
   this->direction = kCounterClockwise;
   digitalWrite(PIN_MOTOR_CW, LOW);
   digitalWrite(PIN_MOTOR_CCW, HIGH);
