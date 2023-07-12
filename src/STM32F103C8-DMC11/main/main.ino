@@ -112,8 +112,8 @@
 /*********************************
  * Motor info
  *********************************/
-#define GEAR_RATIO                       298
-#define GRIPPER_GEAR_RATIO               3.814814814
+#define GEAR_RATIO                       603
+#define GRIPPER_GEAR_RATIO               3
 
 /*********************************
  * Encoder info

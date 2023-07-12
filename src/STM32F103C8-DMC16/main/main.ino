@@ -115,7 +115,7 @@
 /*********************************
  * Motor info
  *********************************/
-#define GEAR_RATIO                       603
+#define GEAR_RATIO                       302
 #define GRIPPER_GEAR_RATIO               3
 
 /*********************************
@@ -984,7 +984,7 @@ void MotorOperatingNode(void *pvParameters)
                                                            }
     else if (GripperMotor.op_command == kPosMove)         {PrintOnMutex("/POSMOVE 1;");
                                                            GripperMotor.MoveTargetPos();
-                                                           PrintOnMutex("/POSMOVE o;"); 
+                                                           PrintOnMutex("/POSMOVE 0;"); 
                                                            }
     
 
