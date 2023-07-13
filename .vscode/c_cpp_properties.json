@@ -10,15 +10,15 @@
             ],
             "intelliSenseMode": "gcc-x64",
             "includePath": [
-                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2021.5.31\\system\\libmaple",
-                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2021.5.31\\system\\libmaple\\include",
-                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2021.5.31\\system\\libmaple\\stm32f1\\include",
-                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2021.5.31\\system\\libmaple\\usb\\stm32f1",
-                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2021.5.31\\system\\libmaple\\usb\\usb_lib",
-                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2021.5.31\\cores\\maple",
-                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2021.5.31\\variants\\generic_stm32f103c",
-                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2021.5.31\\libraries\\EEPROM",
-                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2021.5.31\\libraries\\FreeRTOS821",
+                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2022.9.26\\system\\libmaple",
+                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2022.9.26\\system\\libmaple\\include",
+                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2022.9.26\\system\\libmaple\\stm32f1\\include",
+                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2022.9.26\\system\\libmaple\\usb\\stm32f1",
+                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2022.9.26\\system\\libmaple\\usb\\usb_lib",
+                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2022.9.26\\cores\\maple",
+                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2022.9.26\\variants\\generic_stm32f103c",
+                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2022.9.26\\libraries\\EEPROM",
+                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2022.9.26\\libraries\\FreeRTOS821",
                 "C:\\Users\\JANGDAEYUN\\Documents\\Arduino\\libraries\\HX711_ADC\\src",
                 "c:\\users\\jangdaeyun\\appdata\\local\\arduino15\\packages\\arduino\\tools\\arm-none-eabi-gcc\\4.8.3-2014q1\\arm-none-eabi\\include\\c++\\4.8.3",
                 "c:\\users\\jangdaeyun\\appdata\\local\\arduino15\\packages\\arduino\\tools\\arm-none-eabi-gcc\\4.8.3-2014q1\\arm-none-eabi\\include\\c++\\4.8.3\\arm-none-eabi",
@@ -28,7 +28,7 @@
                 "c:\\users\\jangdaeyun\\appdata\\local\\arduino15\\packages\\arduino\\tools\\arm-none-eabi-gcc\\4.8.3-2014q1\\arm-none-eabi\\include"
             ],
             "forcedInclude": [
-                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2021.5.31\\cores\\maple\\Arduino.h"
+                "C:\\Users\\JANGDAEYUN\\AppData\\Local\\Arduino15\\packages\\stm32duino\\hardware\\STM32F1\\2022.9.26\\cores\\maple\\Arduino.h"
             ],
             "cStandard": "c11",
             "cppStandard": "c++11",
